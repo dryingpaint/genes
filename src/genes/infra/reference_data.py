@@ -227,15 +227,21 @@ def populate_all():
     populate_reference_genome.remote()
     print("Reference genome done.\n")
 
-    # These can run in parallel
-    futures = [
-        populate_vep_cache.spawn(),
-        populate_alphamissense_scores.spawn(),
-        populate_spliceai_scores.spawn(),
-        populate_gpn_msa_scores.spawn(),
-        populate_clinvar.spawn(),
-    ]
-    for f in futures:
-        f.get()
+    # These can run in parallel — collect results individually so one failure
+    # doesn't block the rest
+    jobs = {
+        "alphamissense": populate_alphamissense_scores.spawn(),
+        "clinvar": populate_clinvar.spawn(),
+        "spliceai": populate_spliceai_scores.spawn(),
+        "gpn_msa": populate_gpn_msa_scores.spawn(),
+    }
+    # VEP cache skipped — requires VEP Perl installer (not in base image)
 
-    print("\nAll reference data populated.")
+    for name, handle in jobs.items():
+        try:
+            handle.get()
+            print(f"  [{name}] done")
+        except Exception as exc:
+            print(f"  [{name}] FAILED: {exc}")
+
+    print("\nReference data population complete.")
