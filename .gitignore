@@ -35,6 +35,9 @@ coverage.xml
 # Benchmark results (large, generated)
 benchmark_results/
 
+# Downloaded test data
+test_data/
+
 # Reference data (never commit)
 *.fa
 *.fa.fai
