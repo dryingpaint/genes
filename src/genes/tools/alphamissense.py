@@ -188,7 +188,19 @@ def alphamissense_lookup(
         output_summary={
             "n_variants_queried": len(scored),
             "n_scores_found": n_found,
-            "scores": [v.model_dump() for v in scored],
+            # Only include variants with actual scores (not the full queried set)
+            "scored_variants": [
+                v.model_dump() for v in scored
+                if v.scores.get("am_pathogenicity") is not None
+            ][:1000],  # Cap to avoid bloating JSON
+            "pathogenic_count": sum(
+                1 for v in scored
+                if v.classifications.get("am_class") == "likely_pathogenic"
+            ),
+            "benign_count": sum(
+                1 for v in scored
+                if v.classifications.get("am_class") == "likely_benign"
+            ),
         },
         errors=errors,
         warnings=warnings,
