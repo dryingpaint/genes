@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Modal
+.modal/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Benchmark results (large, generated)
+benchmark_results/
+
+# Reference data (never commit)
+*.fa
+*.fa.fai
+*.dict
+*.bam
+*.bam.bai
+*.cram
+*.cram.crai
+*.vcf.gz
+*.vcf.gz.tbi
+*.bed.gz
+*.bed.gz.tbi
+
+# Keep test fixtures
+!tests/fixtures/*.vcf.gz
+!tests/fixtures/*.vcf
