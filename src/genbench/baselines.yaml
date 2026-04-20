@@ -1,0 +1,91 @@
+arabidopsis:
+  metric: "Flowering time R\xB2 ~0.4\u20130.7"
+  model: GBLUP
+  paper: 1001 Genomes Consortium, Cell 2016
+  source: known_baseline
+  updated: '2026-04-20'
+brca1_sge:
+  metric: '>90% accuracy on Findlay 2018 SGE'
+  model: Evo 2
+  paper: Brixi et al., Science 2025
+  source: known_baseline
+  updated: '2026-04-20'
+caqtl:
+  metric: Wins DART-Eval counterfactual VEP
+  model: ChromBPNet ISM
+  paper: Patel & Kundaje, NeurIPS 2024
+  source: known_baseline
+  updated: '2026-04-20'
+clinvar:
+  doi: 10.1126/science.adg7492
+  metric: AUROC ~0.94 on ClinVar (unsupervised, no circularity)
+  model: AlphaMissense
+  paper: Cheng et al., Science 2023
+  source: known_baseline
+  updated: '2026-04-20'
+dgrp:
+  metric: "CV R\xB2 ~0.3\u20130.7 per trait (approaches H\xB2)"
+  model: GBLUP / BayesB
+  paper: Mackay et al., Nature 2012
+  source: known_baseline
+  updated: '2026-04-20'
+dms:
+  metric: "Mean Spearman \u03C1 ~0.48 on ProteinGym"
+  model: SaProt-1.3B
+  paper: Su et al., ICLR 2024
+  source: known_baseline
+  updated: '2026-04-20'
+eqtl:
+  metric: "Cross-individual r \u2248 0\u20130.1 (all models, Huang/Sasse 2023)"
+  model: PrediXcan elastic-net
+  paper: Gamazon et al., Nature Genetics 2015
+  source: known_baseline
+  updated: '2026-04-20'
+giab:
+  metric: SNV F1 > 0.999, indel F1 > 0.995
+  model: DeepVariant v1.6
+  paper: Poplin et al., Nature Biotechnology 2018
+  source: known_baseline
+  updated: '2026-04-20'
+hirisplex:
+  metric: Eye color AUC >0.90, hair ~0.80, skin ~0.75
+  model: HIrisPlex-S
+  paper: Chaitanya et al., FSI Genetics 2018
+  source: known_baseline
+  updated: '2026-04-20'
+hla:
+  metric: '>99% class I, >97% class II concordance'
+  model: HLA*LA
+  paper: Dilthey et al., Bioinformatics 2019
+  source: known_baseline
+  updated: '2026-04-20'
+pgx:
+  metric: "96.5\u201399.3% concordance on GeT-RM"
+  model: Cyrius (CYP2D6) + PharmCAT (others)
+  paper: Chen et al., The Pharmacogenomics Journal 2021
+  source: known_baseline
+  updated: '2026-04-20'
+portability:
+  metric: "1.2\u20131.8\xD7 improvement in AFR over EUR-only PRS"
+  model: PRS-CSx
+  paper: Ruan et al., Nature Genetics 2022
+  source: known_baseline
+  updated: '2026-04-20'
+sqtl:
+  metric: "Evo 2 #1 on SpliceVarDB; SpliceAI \u0394\u22650.5 captures ~85% known splice-disrupting"
+  model: Evo 2 / SpliceAI
+  paper: Jaganathan et al., Cell 2019 / Brixi et al., Science 2025
+  source: known_baseline
+  updated: '2026-04-20'
+ukb_disease:
+  metric: "CAD AUC ~0.78\u20130.82 (PRS + covariates)"
+  model: SBayesRC PRS + clinical risk factors
+  paper: Zheng et al., Nature Genetics 2024
+  source: known_baseline
+  updated: '2026-04-20'
+ukb_quantitative:
+  metric: "Height R\xB2 ~0.30\u20130.40 (EUR)"
+  model: SBayesRC + covariates
+  paper: Zheng et al., Nature Genetics 2024
+  source: known_baseline
+  updated: '2026-04-20'
