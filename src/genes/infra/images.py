@@ -52,9 +52,14 @@ _cpp = (
     )
 )
 
-# VEP: TODO — restore once Bio::DB::HTS compile issues resolved.
-# For now uses base image; VEP tool will report "vep binary not found".
-_vep = _base
+# VEP: Install via conda (handles Bio::DB::HTS and all Perl deps cleanly)
+_vep = (
+    modal.Image.micromamba(python_version="3.11")
+    .micromamba_install("ensembl-vep=112.0", "htslib", "samtools", "bcftools",
+                        channels=["bioconda", "conda-forge"])
+    .pip_install("pydantic>=2.0", "polars>=1.0", "pysam>=0.22",
+                 "pandas>=2.2", "numpy>=1.26")
+)
 
 # --------------------------------------------------------------------------
 # Assign to named images used by tool wrappers
