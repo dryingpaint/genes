@@ -242,7 +242,11 @@ def spliceai_lookup(
             "n_variants_queried": len(all_results),
             "n_scores_found": n_found,
             "n_high_impact": n_high,
-            "scores": [v.model_dump() for v in all_results],
+            # Only include variants with scores found (not the full 4M)
+            "high_impact_variants": [
+                v.model_dump() for v in all_results
+                if v.classifications.get("spliceai_impact") in ("high", "moderate")
+            ][:1000],  # Cap at 1000 to avoid bloating JSON
         },
         errors=errors,
         warnings=warnings,
