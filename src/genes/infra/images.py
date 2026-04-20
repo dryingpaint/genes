@@ -1,8 +1,7 @@
 """Modal container image definitions.
 
-MVP: Uses a single Python image for all tools to avoid build failures from
-transient network issues. Tool-specific images (VEP, GATK, DeepVariant)
-will be restored once Modal's image cache is warm.
+Strategy: base Python image for most tools, specialized images only where
+a specific binary is required (VEP, Java, plink2).
 """
 
 import modal
@@ -14,7 +13,8 @@ def _with_genes_src(image: modal.Image) -> modal.Image:
 
 
 # --------------------------------------------------------------------------
-# Single base image for MVP — all tools use this
+# Base: Python 3.11 + bioinformatics CLI tools + common pip packages
+# Used by most tools (lookups, scoring, Python-native tools)
 # --------------------------------------------------------------------------
 _base = (
     modal.Image.debian_slim(python_version="3.11")
@@ -26,15 +26,47 @@ _base = (
     )
 )
 
-# All images point to the same base for now
-image_python_bio = _base
-image_vep = _base        # TODO: restore ensemblorg/ensembl-vep:release_112.0
-image_java = _base       # TODO: restore with JDK + PharmCAT/GATK/Exomiser JARs
-image_cpp_tools = _base  # TODO: restore with plink2/ADMIXTURE/GCTB binaries
-image_gpu_torch = _base  # TODO: restore with PyTorch + CUDA
-image_gpu_jax = _base    # TODO: restore with DeepVariant
-image_r = _base          # TODO: restore with R + Bioconductor
-image_annotsv = _base    # TODO: restore with AnnotSV
+# --------------------------------------------------------------------------
+# Java: base + JDK 17 + PharmCAT JAR + GATK
+# For PharmCAT, Exomiser, Mutect2
+# --------------------------------------------------------------------------
+_java = (
+    _base
+    .apt_install("openjdk-17-jre-headless")
+    .run_commands(
+        "wget -q https://github.com/PharmGKB/PharmCAT/releases/download/v2.13.0/"
+        "pharmcat-2.13.0-all.jar -O /opt/pharmcat.jar",
+    )
+)
+
+# --------------------------------------------------------------------------
+# C++ tools: base + plink2 static binary
+# For PRS calculation and ancestry inference
+# --------------------------------------------------------------------------
+_cpp = (
+    _base
+    .run_commands(
+        "wget -q https://s3.amazonaws.com/plink2-assets/alpha5/"
+        "plink2_linux_x86_64_20240818.zip -O /tmp/plink2.zip"
+        " && unzip -q /tmp/plink2.zip -d /usr/local/bin/ && rm /tmp/plink2.zip",
+    )
+)
+
+# VEP: TODO — restore once Bio::DB::HTS compile issues resolved.
+# For now uses base image; VEP tool will report "vep binary not found".
+_vep = _base
+
+# --------------------------------------------------------------------------
+# Assign to named images used by tool wrappers
+# --------------------------------------------------------------------------
+image_python_bio = _base     # Lookups, scoring, Cyrius, Biolearn, etc.
+image_vep = _vep             # VEP annotation
+image_java = _java           # PharmCAT, Exomiser, GATK/Mutect2
+image_cpp_tools = _cpp       # plink2 (PRS), ancestry
+image_gpu_torch = _base      # TODO: restore with PyTorch + CUDA
+image_gpu_jax = _base        # TODO: restore with DeepVariant
+image_r = _base              # TODO: restore with R + ichorCNA
+image_annotsv = _base        # TODO: restore with AnnotSV
 
 # Add local genes package to all images
 image_python_bio = _with_genes_src(image_python_bio)

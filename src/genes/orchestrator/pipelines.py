@@ -70,20 +70,23 @@ def germline_vcf_pipeline(request: AnalysisRequest) -> PipelineResult:
     result = PipelineResult(run_id=request.run_id, input_type=request.input_type)
     vcf_path = request.input_paths[0]
 
-    # Step 1: VEP annotation (sequential — downstream tools need annotated VCF)
+    # Step 1: VEP annotation (best-effort — continue with raw VCF if VEP fails)
+    annotated_vcf = vcf_path
     try:
         vep_result = vep.annotate.remote(vcf_path, request.run_id)
         result.tool_results["vep"] = vep_result
+        if vep_result.success:
+            annotated_vcf = vep_result.output_summary.get("annotated_vcf", vcf_path)
     except Exception as exc:
-        result.errors.append(f"VEP failed: {exc}")
-        result.finalize()
-        return result
-
-    annotated_vcf = vep_result.output_summary.get("annotated_vcf", vcf_path)
+        result.errors.append(f"VEP failed (continuing with raw VCF): {exc}")
 
     # Step 2: Parallel tool fan-out
     futures: dict[str, Any] = {}
-    futures["alphamissense"] = _safe_spawn(alphamissense.alphamissense_lookup, annotated_vcf, request.run_id)
+    # AlphaMissense: run_id + vcf_path as keyword
+    futures["alphamissense"] = _safe_spawn(
+        alphamissense.alphamissense_lookup, request.run_id, vcf_path=annotated_vcf
+    )
+    # SpliceAI, GPN-MSA, PharmCAT, Ancestry: (vcf_path, run_id) positional
     futures["spliceai"] = _safe_spawn(spliceai.spliceai_lookup, annotated_vcf, request.run_id)
     futures["gpn_msa"] = _safe_spawn(gpn_msa.gpn_msa_lookup, annotated_vcf, request.run_id)
     futures["pharmcat"] = _safe_spawn(pharmcat.run, vcf_path, request.run_id)
@@ -91,7 +94,7 @@ def germline_vcf_pipeline(request: AnalysisRequest) -> PipelineResult:
 
     if request.prs_traits:
         futures["prs"] = _safe_spawn(
-            prs.calculate, vcf_path, request.run_id, traits=request.prs_traits
+            prs.calculate, vcf_path, request.run_id, request.prs_traits
         )
 
     # Exomiser: only if HPO terms provided (Mendelian disease prioritization)
