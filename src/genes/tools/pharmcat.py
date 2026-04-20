@@ -105,12 +105,35 @@ def run(
     warnings: list[str] = []
     errors: list[str] = []
 
-    # PharmCAT requires uncompressed VCF — decompress if needed
+    # PharmCAT v2 requires its preprocessor for WGS VCFs.
+    # The preprocessor normalizes, filters to PGx regions, and handles multi-allelic sites.
     actual_vcf = vcf_path
-    if vcf_path.endswith(".gz"):
-        import subprocess as _sp
-        actual_vcf = str(out_dir / "input.vcf")
-        _sp.run(["bcftools", "view", vcf_path, "-O", "v", "-o", actual_vcf], check=True)
+    try:
+        # Decompress if needed
+        if vcf_path.endswith(".gz"):
+            import subprocess as _sp
+            decompressed = str(out_dir / "input.vcf")
+            _sp.run(["bcftools", "view", vcf_path, "-O", "v", "-o", decompressed], check=True)
+            actual_vcf = decompressed
+
+        # Run PharmCAT preprocessor
+        preprocess_cmd = [
+            "java", "-cp", PHARMCAT_JAR,
+            "org.pharmgkb.pharmcat.VcfPreprocessor",
+            "-vcf", actual_vcf,
+            "-o", str(out_dir),
+        ]
+        run_cmd(preprocess_cmd, timeout=600)
+
+        # Find preprocessed VCF
+        preprocessed = list(out_dir.glob("*.preprocessed.vcf"))
+        if preprocessed:
+            actual_vcf = str(preprocessed[0])
+            warnings.append(f"Used PharmCAT preprocessor: {preprocessed[0].name}")
+        else:
+            warnings.append("PharmCAT preprocessor produced no output; using raw VCF")
+    except Exception as e:
+        warnings.append(f"PharmCAT preprocessing failed ({e}); using raw VCF")
 
     cmd = [
         "java", "-jar", PHARMCAT_JAR,
@@ -124,8 +147,14 @@ def run(
 
     with ToolTimer() as timer:
         try:
-            proc = run_cmd(cmd, timeout=3500)
-            if proc.stderr:
+            proc = run_cmd(cmd, check=False, timeout=3500)
+            if proc.returncode != 0:
+                errors.append(f"PharmCAT exited with code {proc.returncode}")
+                if proc.stderr:
+                    errors.append(proc.stderr.strip()[:2000])
+                if proc.stdout:
+                    warnings.append(proc.stdout.strip()[:2000])
+            elif proc.stderr:
                 for line in proc.stderr.strip().splitlines():
                     line_lower = line.lower()
                     if "warn" in line_lower:

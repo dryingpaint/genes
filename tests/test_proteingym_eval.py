@@ -92,9 +92,10 @@ class TestLeaderboardPerAssayValidation:
     def test_assay_rho_ranges_are_plausible(self):
         """No model should have rho > 1 or < -1."""
         rows = _load_leaderboard()
+        skip_cols = {"DMS ID", "Number of Mutants", "UniProt_id", "taxon", "selection_type"}
         for r in rows:
             for key, val in r.items():
-                if key == "DMS ID":
+                if key in skip_cols:
                     continue
                 try:
                     v = float(val)
