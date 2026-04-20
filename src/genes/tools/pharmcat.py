@@ -105,9 +105,16 @@ def run(
     warnings: list[str] = []
     errors: list[str] = []
 
+    # PharmCAT requires uncompressed VCF — decompress if needed
+    actual_vcf = vcf_path
+    if vcf_path.endswith(".gz"):
+        import subprocess as _sp
+        actual_vcf = str(out_dir / "input.vcf")
+        _sp.run(["bcftools", "view", vcf_path, "-O", "v", "-o", actual_vcf], check=True)
+
     cmd = [
         "java", "-jar", PHARMCAT_JAR,
-        "-vcf", vcf_path,
+        "-vcf", actual_vcf,
         "-o", str(out_dir),
         "-reporterJson",
     ]

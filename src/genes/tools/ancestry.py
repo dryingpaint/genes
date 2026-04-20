@@ -67,6 +67,13 @@ def infer_ancestry(
         if not Path(vcf_path).exists():
             errors.append(f"VCF file not found: {vcf_path}")
 
+        # Check for 1KG reference panel
+        if not Path(f"{_KG_PREFIX}.bed").exists():
+            errors.append(
+                f"1KG reference panel not found at {_KG_PREFIX}.bed. "
+                "Populate the popgen volume with 1000 Genomes Phase 3 plink files."
+            )
+
         sample_prefix = str(outdir / "sample")
         merged_prefix = str(outdir / "merged")
 

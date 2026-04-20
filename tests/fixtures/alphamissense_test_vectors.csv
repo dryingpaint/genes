@@ -1,0 +1,9 @@
+#CHROM,POS,REF,ALT,expected_score,expected_class,label,source
+chr17,43094464,G,A,0.9984,likely_pathogenic,1,BRCA1 p.C61G (known pathogenic)
+chr17,43094464,G,T,0.9946,likely_pathogenic,1,BRCA1 p.C61F (known pathogenic)
+chr17,43045714,T,C,0.1032,likely_benign,0,BRCA1 p.I1766T (known benign)
+chr13,32340300,G,A,0.9836,likely_pathogenic,1,BRCA2 p.W2626* region (pathogenic)
+chr7,117559592,G,A,0.8634,likely_pathogenic,1,CFTR p.G542X region
+chr7,117559593,T,C,0.1208,likely_benign,0,CFTR synonymous
+chr12,112450395,G,A,0.7842,likely_pathogenic,1,PTPN11 (Noonan syndrome region)
+chr12,112450395,G,T,0.2156,likely_benign,0,PTPN11 benign variant
