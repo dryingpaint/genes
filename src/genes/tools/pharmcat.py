@@ -196,6 +196,18 @@ def run(
         try:
             parsed = _parse_pharmcat_report(json_reports[0])
             output_summary = parsed
+            # Debug: include top-level report keys for troubleshooting
+            with open(json_reports[0]) as _fh:
+                _raw = json.load(_fh)
+                output_summary["_report_keys"] = list(_raw.keys())[:20]
+                # Sample first gene report if exists
+                for key_path in ["reportContext", "geneReports", "geneCalls", "results"]:
+                    if key_path in _raw:
+                        val = _raw[key_path]
+                        if isinstance(val, dict):
+                            output_summary[f"_sample_{key_path}"] = list(val.keys())[:10]
+                        elif isinstance(val, list) and val:
+                            output_summary[f"_sample_{key_path}"] = str(val[0])[:500]
         except Exception as e:
             warnings.append(f"Failed to parse PharmCAT report: {e}")
             output_summary = {"parse_error": str(e)}
