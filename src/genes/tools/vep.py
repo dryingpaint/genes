@@ -23,8 +23,8 @@ from genes.infra.volumes import (
 )
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
-VEP_CACHE_DIR = f"{MOUNT_VEP}/cache"
-FASTA_PATH = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
+VEP_CACHE_DIR = f"{MOUNT_VEP}"
+FASTA_PATH = f"{MOUNT_REFERENCE}/GRCh38.fa"
 ALPHAMISSENSE_PLUGIN = f"{MOUNT_VEP}/plugins/AlphaMissense_hg38.tsv.gz"
 CLINVAR_VCF = f"{MOUNT_CLINICAL}/clinvar/clinvar.vcf.gz"
 

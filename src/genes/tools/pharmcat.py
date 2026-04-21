@@ -105,35 +105,41 @@ def run(
     warnings: list[str] = []
     errors: list[str] = []
 
-    # PharmCAT v2 requires its preprocessor for WGS VCFs.
-    # The preprocessor normalizes, filters to PGx regions, and handles multi-allelic sites.
+    # PharmCAT can't handle full WGS VCFs (OutOfMemoryError on readAllBytes).
+    # Filter to PGx gene regions first with bcftools, then decompress.
     actual_vcf = vcf_path
     try:
-        # Decompress if needed
-        if vcf_path.endswith(".gz"):
-            import subprocess as _sp
-            decompressed = str(out_dir / "input.vcf")
-            _sp.run(["bcftools", "view", vcf_path, "-O", "v", "-o", decompressed], check=True)
-            actual_vcf = decompressed
-
-        # Run PharmCAT preprocessor
-        preprocess_cmd = [
-            "java", "-cp", PHARMCAT_JAR,
-            "org.pharmgkb.pharmcat.VcfPreprocessor",
-            "-vcf", actual_vcf,
-            "-o", str(out_dir),
-        ]
-        run_cmd(preprocess_cmd, timeout=600)
-
-        # Find preprocessed VCF
-        preprocessed = list(out_dir.glob("*.preprocessed.vcf"))
-        if preprocessed:
-            actual_vcf = str(preprocessed[0])
-            warnings.append(f"Used PharmCAT preprocessor: {preprocessed[0].name}")
-        else:
-            warnings.append("PharmCAT preprocessor produced no output; using raw VCF")
+        # PharmCAT PGx regions (CPIC genes on GRCh38) — major loci
+        pgx_regions = (
+            "chr1:97078528-97110987 "   # DPYD
+            "chr7:99245817-99277621 "   # CYP3A5
+            "chr7:99354604-99464528 "   # CYP3A4
+            "chr10:94761900-94853547 "  # CYP2C19
+            "chr10:94938658-94990091 "  # CYP2C9
+            "chr10:94942205-94989978 "  # CYP2C8
+            "chr13:48037580-48070790 "  # NUDT15
+            "chr16:31093097-31110537 "  # VKORC1
+            "chr19:38924339-38947371 "  # RYR1
+            "chr19:15879372-15884328 "  # CYP4F2
+            "chr22:42126499-42130881 "  # MTHFR
+            "chr6:18130809-18232467 "   # TPMT
+            "chr22:42512500-42551899 "  # CYP2D6 region
+        )
+        filtered_vcf = str(out_dir / "pgx_filtered.vcf")
+        run_cmd([
+            "bcftools", "view", vcf_path,
+            "-r", pgx_regions.strip().replace(" ", ","),
+            "-O", "v", "-o", filtered_vcf,
+        ], timeout=120)
+        actual_vcf = filtered_vcf
+        warnings.append("Filtered VCF to PGx regions before PharmCAT")
     except Exception as e:
-        warnings.append(f"PharmCAT preprocessing failed ({e}); using raw VCF")
+        warnings.append(f"PGx region filtering failed ({e}); trying with full VCF")
+        # Fallback: decompress full VCF (may OOM)
+        if vcf_path.endswith(".gz"):
+            decompressed = str(out_dir / "input.vcf")
+            run_cmd(["bcftools", "view", vcf_path, "-O", "v", "-o", decompressed], timeout=600)
+            actual_vcf = decompressed
 
     cmd = [
         "java", "-jar", PHARMCAT_JAR,

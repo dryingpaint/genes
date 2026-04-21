@@ -78,17 +78,16 @@ def populate_reference_genome():
     timeout=7200,
 )
 def populate_vep_cache():
-    """Download Ensembl VEP cache for GRCh38."""
+    """Download Ensembl VEP cache for GRCh38 using vep_install (conda-installed VEP)."""
     cache_dir = f"{MOUNT_VEP}/homo_sapiens_merged/112_GRCh38"
     if _exists(cache_dir):
         print("VEP cache already present, skipping")
         return
 
+    # vep_install is the conda-installed wrapper for INSTALL.pl
     _run(
-        "perl /opt/vep/src/ensembl-vep/INSTALL.pl"
-        " --AUTO cf --SPECIES homo_sapiens_merged"
-        f" --ASSEMBLY GRCh38 --CACHEDIR {MOUNT_VEP}"
-        " --NO_UPDATE"
+        f"vep_install -a cf -s homo_sapiens_merged -y GRCh38"
+        f" -c {MOUNT_VEP} --NO_UPDATE"
     )
 
     vol_vep.commit()
@@ -234,8 +233,8 @@ def populate_all():
         "clinvar": populate_clinvar.spawn(),
         "spliceai": populate_spliceai_scores.spawn(),
         "gpn_msa": populate_gpn_msa_scores.spawn(),
+        "vep_cache": populate_vep_cache.spawn(),
     }
-    # VEP cache skipped — requires VEP Perl installer (not in base image)
 
     for name, handle in jobs.items():
         try:
