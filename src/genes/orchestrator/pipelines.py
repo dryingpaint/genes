@@ -61,34 +61,24 @@ def _collect(
 
 
 def germline_vcf_pipeline(request: AnalysisRequest) -> PipelineResult:
-    """VEP -> [AlphaMissense, SpliceAI, GPN-MSA, PharmCAT, PRS, Ancestry] in parallel.
+    """All tools run in parallel on the raw VCF. VEP is no longer a bottleneck.
 
-    Optionally runs Exomiser if HPO terms are provided.
+    AlphaMissense/SpliceAI/GPN-MSA do their own lookups from pre-computed scores
+    and don't need VEP-annotated output. VEP runs alongside everything else.
     """
     from genes.tools import vep, alphamissense, spliceai, gpn_msa, pharmcat, prs, ancestry
 
     result = PipelineResult(run_id=request.run_id, input_type=request.input_type)
     vcf_path = request.input_paths[0]
 
-    # Step 1: VEP annotation (best-effort — continue with raw VCF if VEP fails)
-    annotated_vcf = vcf_path
-    try:
-        vep_result = vep.annotate.remote(vcf_path, request.run_id)
-        result.tool_results["vep"] = vep_result
-        if vep_result.success:
-            annotated_vcf = vep_result.output_summary.get("annotated_vcf", vcf_path)
-    except Exception as exc:
-        result.errors.append(f"VEP failed (continuing with raw VCF): {exc}")
-
-    # Step 2: Parallel tool fan-out
+    # All tools in parallel — VEP runs alongside everything else
     futures: dict[str, Any] = {}
-    # AlphaMissense: run_id + vcf_path as keyword
+    futures["vep"] = _safe_spawn(vep.annotate, vcf_path, request.run_id)
     futures["alphamissense"] = _safe_spawn(
-        alphamissense.alphamissense_lookup, request.run_id, vcf_path=annotated_vcf
+        alphamissense.alphamissense_lookup, request.run_id, vcf_path=vcf_path
     )
-    # SpliceAI, GPN-MSA, PharmCAT, Ancestry: (vcf_path, run_id) positional
-    futures["spliceai"] = _safe_spawn(spliceai.spliceai_lookup, annotated_vcf, request.run_id)
-    futures["gpn_msa"] = _safe_spawn(gpn_msa.gpn_msa_lookup, annotated_vcf, request.run_id)
+    futures["spliceai"] = _safe_spawn(spliceai.spliceai_lookup, vcf_path, request.run_id)
+    futures["gpn_msa"] = _safe_spawn(gpn_msa.gpn_msa_lookup, vcf_path, request.run_id)
     futures["pharmcat"] = _safe_spawn(pharmcat.run, vcf_path, request.run_id)
     futures["ancestry"] = _safe_spawn(ancestry.infer_ancestry, vcf_path, request.run_id)
 
@@ -97,13 +87,12 @@ def germline_vcf_pipeline(request: AnalysisRequest) -> PipelineResult:
             prs.calculate, vcf_path, request.run_id, request.prs_traits
         )
 
-    # Exomiser: only if HPO terms provided (Mendelian disease prioritization)
     if request.hpo_terms:
         try:
             from genes.tools import exomiser
-
             futures["exomiser"] = _safe_spawn(
-                exomiser.run, vcf_path, request.run_id, hpo_terms=request.hpo_terms
+                exomiser.prioritize_variants, vcf_path, request.run_id,
+                hpo_terms=request.hpo_terms
             )
         except ImportError:
             result.errors.append("Exomiser tool not yet available; skipping.")

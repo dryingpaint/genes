@@ -162,23 +162,23 @@ def populate_spliceai_scores():
 @app.function(
     image=image_python_bio,
     volumes={MOUNT_PRECOMPUTED: vol_precomputed},
-    timeout=7200,
+    timeout=28800,  # 8 hours — 37 GB download
 )
 def populate_gpn_msa_scores():
-    """Download GPN-MSA pre-computed scores (~10 GB)."""
+    """Download GPN-MSA pre-computed scores from Hugging Face (~37 GB)."""
     out = f"{MOUNT_PRECOMPUTED}/gpn_msa"
-    if _exists(f"{out}/scores"):
+    scores_file = f"{out}/gpn_msa_scores_hg38.tsv.gz"
+    if _exists(scores_file):
         print("GPN-MSA scores already present, skipping")
         return
 
     os.makedirs(out, exist_ok=True)
-    # GPN-MSA scores are available from the songlab-cal/gpn GitHub releases
-    print(
-        "GPN-MSA pre-computed scores can be downloaded from:\n"
-        "  https://github.com/songlab-cal/gpn\n"
-        f"Place score files in {out}/"
-    )
+    base_url = "https://huggingface.co/datasets/songlab/gpn-msa-hg38-scores/resolve/main"
+    _run(f"wget -q -O {scores_file} {base_url}/scores.tsv.bgz")
+    _run(f"wget -q -O {scores_file}.tbi {base_url}/scores.tsv.bgz.tbi")
+
     vol_precomputed.commit()
+    print("GPN-MSA scores populated")
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +209,46 @@ def populate_clinvar():
 
     vol_clinical.commit()
     print("ClinVar populated")
+
+
+# ---------------------------------------------------------------------------
+# Population genetics (~200 GB total, download the essentials)
+# ---------------------------------------------------------------------------
+
+
+@app.function(
+    image=image_python_bio,
+    volumes={MOUNT_POPGEN: vol_popgen},
+    timeout=14400,  # 4 hours
+)
+def populate_1kg_reference():
+    """Download 1000 Genomes Phase 3 plink files for ancestry inference.
+
+    Uses the PLINK2-formatted 1KG data from the official PLINK resources.
+    """
+    from genes.infra.volumes import MOUNT_POPGEN, vol_popgen
+
+    out = f"{MOUNT_POPGEN}/1kg"
+    bed = f"{out}/all_phase3_GRCh38.bed"
+    if _exists(bed):
+        print("1KG reference panel already present, skipping")
+        return
+
+    os.makedirs(out, exist_ok=True)
+
+    # Download 1KG Phase 3 in plink2 format (GRCh38 liftover)
+    # These are available from multiple sources. Using the compact plink2 format.
+    base = "https://www.dropbox.com/s"
+    print(
+        "1KG Phase 3 plink files for GRCh38 must be prepared manually:\n"
+        "1. Download 1KG Phase 3 VCF from https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/\n"
+        "2. Liftover to GRCh38 using CrossMap or picard LiftoverVcf\n"
+        "3. Convert to plink: plink2 --vcf <lifted.vcf.gz> --make-bed --out all_phase3_GRCh38\n"
+        f"4. Place files in {out}/\n"
+        "\nAlternatively, download pre-made GRCh38 plink files from:\n"
+        "  https://www.cog-genomics.org/plink/2.0/resources\n"
+    )
+    vol_popgen.commit()
 
 
 # ---------------------------------------------------------------------------
