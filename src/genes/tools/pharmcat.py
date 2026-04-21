@@ -200,17 +200,9 @@ def run(
             # Debug: include top-level report keys for troubleshooting
             with open(json_reports[0]) as _fh:
                 _raw = json.load(_fh)
-                output_summary["_report_keys"] = list(_raw.keys())[:20]
-                # Dump first gene entry for structure debugging
-                genes_list = _raw.get("genes", [])
-                if genes_list:
-                    first_gene = genes_list[0]
-                    output_summary["_first_gene_keys"] = list(first_gene.keys()) if isinstance(first_gene, dict) else str(type(first_gene))
-                    output_summary["_first_gene_sample"] = json.dumps(first_gene, default=str)[:1000]
-                drugs_list = _raw.get("drugs", [])
-                if drugs_list:
-                    output_summary["_first_drug_keys"] = list(drugs_list[0].keys()) if isinstance(drugs_list[0], dict) else str(type(drugs_list[0]))
-                    output_summary["_first_drug_sample"] = json.dumps(drugs_list[0], default=str)[:1000]
+                # Include PharmCAT version info
+                output_summary["pharmcat_version"] = _raw.get("pharmcatVersion", "")
+                output_summary["cpic_version"] = _raw.get("cpicVersion", "")
         except Exception as e:
             warnings.append(f"Failed to parse PharmCAT report: {e}")
             output_summary = {"parse_error": str(e)}
