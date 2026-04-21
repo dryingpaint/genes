@@ -125,8 +125,14 @@ def annotate(
     with ToolTimer() as timer:
         errors: list[str] = []
         try:
-            proc = run_cmd(cmd, timeout=7000)
-            if proc.stderr:
+            proc = run_cmd(cmd, check=False, timeout=7000)
+            if proc.returncode != 0:
+                errors.append(f"VEP exited with code {proc.returncode}")
+                if proc.stderr:
+                    errors.append(proc.stderr.strip()[:2000])
+                if proc.stdout:
+                    warnings.append(proc.stdout.strip()[:2000])
+            elif proc.stderr:
                 for line in proc.stderr.strip().splitlines():
                     if "WARNING" in line.upper():
                         warnings.append(line.strip())

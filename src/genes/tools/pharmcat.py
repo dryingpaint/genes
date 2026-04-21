@@ -42,6 +42,8 @@ def _parse_pharmcat_report(report_path: Path) -> dict:
         or report.get("geneCalls", [])
     )
     for gr in gene_reports:
+        if not isinstance(gr, dict):
+            continue
         gene = gr.get("gene", gr.get("geneSymbol", ""))
         # Diplotype may be nested under recommendationDiplotypes or directly
         diplotype_obj = gr.get("recommendationDiplotypes", [{}])
@@ -66,6 +68,8 @@ def _parse_pharmcat_report(report_path: Path) -> dict:
         or report.get("drugReports", [])
     )
     for dr in drug_reports:
+        if not isinstance(dr, dict):
+            continue
         drug = dr.get("drug", dr.get("drugName", ""))
         source = dr.get("source", "")
         classification = dr.get("classification", "")
