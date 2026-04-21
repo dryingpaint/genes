@@ -55,10 +55,17 @@ _cpp = (
 # VEP: Install via conda (handles Bio::DB::HTS and all Perl deps cleanly)
 _vep = (
     modal.Image.micromamba(python_version="3.11")
-    .micromamba_install("ensembl-vep=112.0", "htslib", "samtools", "bcftools",
-                        "perl-list-moreutils", "perl-bio-db-hts",
-                        "pysam", "numpy", "pandas", "pydantic", "polars",
-                        channels=["bioconda", "conda-forge"])
+    .micromamba_install(
+        # VEP + all required Perl modules
+        "ensembl-vep=112.0",
+        "perl-list-moreutils",
+        "perl-bio-db-hts",
+        # CLI tools
+        "htslib", "samtools", "bcftools",
+        # Python deps for our wrapper
+        "pysam", "numpy", "pandas", "pydantic", "polars",
+        channels=["bioconda", "conda-forge"],
+    )
 )
 
 # --------------------------------------------------------------------------
