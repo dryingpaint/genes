@@ -1,9 +1,31 @@
-#CHROM,POS,REF,ALT,expected_score,expected_class,label,source
-chr17,43094464,G,A,0.9984,likely_pathogenic,1,BRCA1 p.C61G (known pathogenic)
-chr17,43094464,G,T,0.9946,likely_pathogenic,1,BRCA1 p.C61F (known pathogenic)
-chr17,43045714,T,C,0.1032,likely_benign,0,BRCA1 p.I1766T (known benign)
-chr13,32340300,G,A,0.9836,likely_pathogenic,1,BRCA2 p.W2626* region (pathogenic)
-chr7,117559592,G,A,0.8634,likely_pathogenic,1,CFTR p.G542X region
-chr7,117559593,T,C,0.1208,likely_benign,0,CFTR synonymous
-chr12,112450395,G,A,0.7842,likely_pathogenic,1,PTPN11 (Noonan syndrome region)
-chr12,112450395,G,T,0.2156,likely_benign,0,PTPN11 benign variant
+chrom,pos,ref,alt,am_pathogenicity,am_class,protein_variant,uniprot_id,label
+chr17,7669613,T,G,0.5749,likely_pathogenic,D393A,P04637,1
+chr17,7669613,T,A,0.5743,likely_pathogenic,D393V,P04637,1
+chr17,7669614,C,G,0.6494,likely_pathogenic,D393H,P04637,1
+chr17,7669614,C,A,0.5696,likely_pathogenic,D393Y,P04637,1
+chr17,7669633,C,G,0.8023,likely_pathogenic,K386N,P04637,1
+chr17,7669612,G,T,0.3387,likely_benign,D393E,P04637,0
+chr17,7669612,G,C,0.3387,likely_benign,D393E,P04637,0
+chr17,7669614,C,T,0.27,likely_benign,D393N,P04637,0
+chr17,7669616,G,A,0.2931,likely_benign,S392L,P04637,0
+chr17,7669617,A,C,0.1715,likely_benign,S392A,P04637,0
+chr17,43045706,A,T,0.6445,likely_pathogenic,I1855K,P38398,1
+chr17,43045706,A,G,0.5825,likely_pathogenic,I1855T,P38398,1
+chr17,43045709,A,G,0.8666,likely_pathogenic,L1854P,P38398,1
+chr17,43045712,T,C,0.704,likely_pathogenic,Y1853C,P38398,1
+chr17,43045712,T,G,0.832,likely_pathogenic,Y1853S,P38398,1
+chr17,43045682,T,C,0.0802,likely_benign,Y1863C,P38398,0
+chr17,43045682,T,A,0.0785,likely_benign,Y1863F,P38398,0
+chr17,43045682,T,G,0.0873,likely_benign,Y1863S,P38398,0
+chr17,43045683,A,T,0.1012,likely_benign,Y1863N,P38398,0
+chr17,43045683,A,C,0.1069,likely_benign,Y1863D,P38398,0
+chr7,117480104,T,C,0.5853,likely_pathogenic,S4P,P13569,1
+chr7,117480105,C,T,0.6087,likely_pathogenic,S4L,P13569,1
+chr7,117480105,C,G,0.7271,likely_pathogenic,S4W,P13569,1
+chr7,117480098,C,G,0.1434,likely_benign,Q2E,P13569,0
+chr7,117480098,C,A,0.183,likely_benign,Q2K,P13569,0
+chr7,117480099,A,G,0.1896,likely_benign,Q2R,P13569,0
+chr3,36993561,C,A,0.6503,likely_pathogenic,A5E,P40692,1
+chr3,36993563,G,C,0.7296,likely_pathogenic,G6R,P40692,1
+chr3,36993551,T,G,0.0639,likely_benign,S2A,P40692,0
+chr3,36993551,T,C,0.1299,likely_benign,S2P,P40692,0

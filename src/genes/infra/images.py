@@ -56,9 +56,9 @@ _cpp = (
 _vep = (
     modal.Image.micromamba(python_version="3.11")
     .micromamba_install("ensembl-vep=112.0", "htslib", "samtools", "bcftools",
+                        "pip", "pysam", "numpy", "pandas",
                         channels=["bioconda", "conda-forge"])
-    .pip_install("pydantic>=2.0", "polars>=1.0", "pysam>=0.22",
-                 "pandas>=2.2", "numpy>=1.26")
+    .pip_install("pydantic>=2.0", "polars>=1.0")
 )
 
 # --------------------------------------------------------------------------
