@@ -35,10 +35,10 @@ def _parse_pharmcat_report(report_path: Path) -> dict:
     diplotypes: list[dict] = []
     recommendations: list[dict] = []
 
-    # PharmCAT v2: reportContext.geneReports[]
+    # PharmCAT v2.13: top-level "genes" list
     gene_reports = (
-        report.get("reportContext", {}).get("geneReports", [])
-        or report.get("geneReports", [])
+        report.get("genes", [])
+        or report.get("reportContext", {}).get("geneReports", [])
         or report.get("geneCalls", [])
     )
     for gr in gene_reports:
@@ -59,9 +59,10 @@ def _parse_pharmcat_report(report_path: Path) -> dict:
                 entry["activity_score"] = activity
             diplotypes.append(entry)
 
-    # PharmCAT v2: prescribingGuidanceReports[]
+    # PharmCAT v2.13: top-level "drugs" list
     drug_reports = (
-        report.get("prescribingGuidanceReports", [])
+        report.get("drugs", [])
+        or report.get("prescribingGuidanceReports", [])
         or report.get("drugReports", [])
     )
     for dr in drug_reports:
