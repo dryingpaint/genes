@@ -42,7 +42,12 @@ class ClinVarEval(Eval):
                 "AlphaMissense published eval: missense variants balanced per gene "
                 "(genes with ≥5 P and ≥5 B). 612 genes, ~18,924 variants."
             ),
-            filters={"variant_type": "missense", "balanced": True, "min_per_gene": 5},
+            filters={
+                "variant_type": "missense",
+                "balanced": True,
+                "min_per_gene": 5,
+                "min_review_stars": 2,  # multiple submitters or expert panel
+            },
             split_type=SplitType.ZERO_SHOT,
             split_params={},
             metrics=["auroc"],
@@ -94,13 +99,26 @@ class ClinVarEval(Eval):
         df = self._load_base()
         filters = config.filters
 
+        # Filter by review quality (star count)
+        min_stars = filters.get("min_review_stars")
+        if min_stars and min_stars >= 2:
+            # 2+ stars = multiple submitters, expert panel, or practice guideline
+            high_quality = {
+                "criteria provided, multiple submitters, no conflicts",
+                "reviewed by expert panel",
+                "practice guideline",
+            }
+            before = len(df)
+            df = df[df["ReviewStatus"].isin(high_quality)]
+            print(f"  Review filter (≥{min_stars} stars): {len(df)}/{before} variants")
+
         # Filter by variant type
         vtype = filters.get("variant_type", "snv")
         if vtype == "snv":
             df = df[df["Type"] == "single nucleotide variant"]
         elif vtype == "missense":
-            # SNVs only — AlphaMissense coverage check happens at score time
             df = df[df["Type"] == "single nucleotide variant"]
+            df = self._filter_to_am_missense(df)
 
         # Balance per gene if requested
         if filters.get("balanced"):
@@ -108,6 +126,30 @@ class ClinVarEval(Eval):
             df = self._balance_per_gene(df, min_per_gene)
 
         return df
+
+    def _filter_to_am_missense(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Keep only variants present in the AlphaMissense TSV (i.e., true missense)."""
+        from genbench.models.alphamissense import _load_index
+
+        try:
+            index = _load_index()
+        except FileNotFoundError:
+            print("  WARNING: AlphaMissense TSV not available, skipping missense filter")
+            return df
+
+        # Normalize ClinVar chroms to chr* format
+        chroms = [f"chr{c}" if not str(c).startswith("chr") else str(c)
+                  for c in df["Chromosome"]]
+
+        mask = [
+            (chrom, int(pos), ref, alt) in index
+            for chrom, pos, ref, alt in zip(
+                chroms, df["PositionVCF"], df["ReferenceAlleleVCF"], df["AlternateAlleleVCF"]
+            )
+        ]
+        filtered = df[mask]
+        print(f"  Missense filter: {len(filtered)}/{len(df)} variants have AlphaMissense scores")
+        return filtered
 
     def _balance_per_gene(self, df: pd.DataFrame, min_per_gene: int) -> pd.DataFrame:
         """Subsample to equal P/B per gene, keeping only genes with enough of each."""
