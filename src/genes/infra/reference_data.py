@@ -17,10 +17,12 @@ from genes.app import app
 from genes.infra.images import image_python_bio, image_vep, image_java
 from genes.infra.volumes import (
     MOUNT_CLINICAL,
+    MOUNT_POPGEN,
     MOUNT_PRECOMPUTED,
     MOUNT_REFERENCE,
     MOUNT_VEP,
     vol_clinical,
+    vol_popgen,
     vol_precomputed,
     vol_reference,
     vol_vep,
@@ -226,8 +228,6 @@ def populate_1kg_reference():
 
     Uses the PLINK2-formatted 1KG data from the official PLINK resources.
     """
-    from genes.infra.volumes import MOUNT_POPGEN, vol_popgen
-
     out = f"{MOUNT_POPGEN}/1kg"
     bed = f"{out}/all_phase3_GRCh38.bed"
     if _exists(bed):
