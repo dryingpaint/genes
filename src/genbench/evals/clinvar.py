@@ -53,6 +53,10 @@ class ClinVarEval(Eval):
         df = df[df["ClinSigSimple"].isin([0, 1])]
         df["label"] = df["ClinSigSimple"].astype(int)
 
+        # Filter to SNVs (single nucleotide variants) — required for missense-focused
+        # models like AlphaMissense. Indels, deletions, etc. are excluded.
+        df = df[df["Type"] == "single nucleotide variant"]
+
         # Parse dates
         df["submission_date"] = pd.to_datetime(df["LastEvaluated"], format="mixed", errors="coerce")
         df = df.dropna(subset=["submission_date"])
@@ -64,8 +68,11 @@ class ClinVarEval(Eval):
         return {"train": train, "test": test}
 
     def make_inputs(self, data: pd.DataFrame, split_data: pd.DataFrame) -> dict[str, Any]:
+        # Normalize chromosomes to chr* format (ClinVar uses "7", most tools use "chr7")
+        chroms = [f"chr{c}" if not str(c).startswith("chr") else str(c)
+                  for c in split_data["Chromosome"]]
         return {
-            "chroms": split_data["Chromosome"].tolist(),
+            "chroms": chroms,
             "positions": split_data["PositionVCF"].tolist(),
             "refs": split_data["ReferenceAlleleVCF"].tolist(),
             "alts": split_data["AlternateAlleleVCF"].tolist(),
@@ -76,13 +83,38 @@ class ClinVarEval(Eval):
         return split_data["label"].values
 
     def score(self, y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, AncestryStratifiedMetric]:
-        # Replace NaN predictions with 0.5 (uninformative)
-        y_pred = np.where(np.isnan(y_pred), 0.5, y_pred)
+        # Only score variants where the model returned a prediction.
+        # Missense-only models (AlphaMissense) return NaN for non-missense variants —
+        # we exclude those rather than penalizing the model for not covering them.
+        scored_mask = ~np.isnan(y_pred)
+        n_scored = scored_mask.sum()
+        n_total = len(y_pred)
+
+        if n_scored == 0:
+            from genbench.types import MetricValue
+            nan_mv = MetricValue(estimate=float("nan"), ci_lower=0, ci_upper=0, n=0)
+            return {
+                "auroc": AncestryStratifiedMetric(aggregate=nan_mv),
+                "auprc": AncestryStratifiedMetric(aggregate=nan_mv),
+                "coverage": AncestryStratifiedMetric(
+                    aggregate=MetricValue(estimate=0.0, ci_lower=0, ci_upper=0, n=n_total)
+                ),
+            }
+
+        yt = y_true[scored_mask]
+        yp = y_pred[scored_mask]
+
+        from genbench.types import MetricValue
         return {
-            "auroc": AncestryStratifiedMetric(aggregate=auroc(y_true, y_pred, n_bootstrap=500)),
-            "auprc": AncestryStratifiedMetric(aggregate=auprc(y_true, y_pred, n_bootstrap=500)),
+            "auroc": AncestryStratifiedMetric(aggregate=auroc(yt, yp, n_bootstrap=500)),
+            "auprc": AncestryStratifiedMetric(aggregate=auprc(yt, yp, n_bootstrap=500)),
             "balanced_accuracy": AncestryStratifiedMetric(
-                aggregate=balanced_accuracy(y_true, (y_pred > 0.5).astype(int), n_bootstrap=500)
+                aggregate=balanced_accuracy(yt, (yp > 0.5).astype(int), n_bootstrap=500)
+            ),
+            "coverage": AncestryStratifiedMetric(
+                aggregate=MetricValue(
+                    estimate=n_scored / n_total, ci_lower=0, ci_upper=0, n=n_total,
+                )
             ),
         }
 
