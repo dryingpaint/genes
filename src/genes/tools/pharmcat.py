@@ -25,45 +25,56 @@ PHARMCAT_JAR = "/opt/pharmcat.jar"
 
 
 def _parse_pharmcat_report(report_path: Path) -> dict:
-    """Extract diplotypes and recommendations from the PharmCAT JSON report."""
+    """Extract diplotypes and recommendations from the PharmCAT v2 JSON report.
+
+    PharmCAT v2 report structure varies — try multiple key paths.
+    """
     with open(report_path) as fh:
         report = json.load(fh)
 
     diplotypes: list[dict] = []
     recommendations: list[dict] = []
 
-    # Parse gene calls
-    for gene_call in report.get("geneCalls", []):
-        gene = gene_call.get("gene", "")
-        diplotype = gene_call.get("diplotype", "")
-        phenotype = gene_call.get("phenotype", "")
-        activity_score = gene_call.get("activityScore")
+    # PharmCAT v2: reportContext.geneReports[]
+    gene_reports = (
+        report.get("reportContext", {}).get("geneReports", [])
+        or report.get("geneReports", [])
+        or report.get("geneCalls", [])
+    )
+    for gr in gene_reports:
+        gene = gr.get("gene", gr.get("geneSymbol", ""))
+        # Diplotype may be nested under recommendationDiplotypes or directly
+        diplotype_obj = gr.get("recommendationDiplotypes", [{}])
+        if isinstance(diplotype_obj, list) and diplotype_obj:
+            diplotype = diplotype_obj[0].get("label", "")
+            activity = diplotype_obj[0].get("activityScore", None)
+        else:
+            diplotype = gr.get("diplotype", gr.get("printDiplotype", ""))
+            activity = gr.get("activityScore")
+
+        phenotype = gr.get("phenotype", gr.get("phenotypes", {}).get("term", ""))
         if gene:
-            entry = {
-                "gene": gene,
-                "diplotype": diplotype,
-                "phenotype": phenotype,
-            }
-            if activity_score is not None:
-                entry["activity_score"] = activity_score
+            entry = {"gene": gene, "diplotype": diplotype, "phenotype": phenotype}
+            if activity is not None:
+                entry["activity_score"] = activity
             diplotypes.append(entry)
 
-    # Parse drug recommendations
-    for drug_report in report.get("drugReports", []):
-        drug = drug_report.get("drug", "")
-        source = drug_report.get("source", "")
-        classification = drug_report.get("classification", "")
-        guideline_url = drug_report.get("guidelineUrl", "")
-        implications = drug_report.get("implications", [])
-        rec_text = drug_report.get("recommendation", "")
+    # PharmCAT v2: prescribingGuidanceReports[]
+    drug_reports = (
+        report.get("prescribingGuidanceReports", [])
+        or report.get("drugReports", [])
+    )
+    for dr in drug_reports:
+        drug = dr.get("drug", dr.get("drugName", ""))
+        source = dr.get("source", "")
+        classification = dr.get("classification", "")
+        rec_text = dr.get("recommendation", dr.get("prescribingInfo", ""))
         if drug:
             recommendations.append({
                 "drug": drug,
                 "source": source,
                 "classification": classification,
-                "guideline_url": guideline_url,
-                "implications": implications,
-                "recommendation": rec_text,
+                "recommendation": str(rec_text)[:500],
             })
 
     return {
