@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from genbench.eval import Eval
+from genbench.eval_config import EvalConfig
 from genbench.registry import register_eval
 from genbench.types import AncestryStratifiedMetric, SplitType
 
@@ -26,14 +27,24 @@ class HirisplexEval(Eval):
     default_baselines = ["hirisplex_s", "null"]
     expected_ceiling = 0.90
 
-    def load_data(self) -> Any:
+    configs = {
+        "default": EvalConfig(
+            name="default",
+            description="HIrisPlex-S pigmentation trait prediction",
+            split_type=SplitType.ZERO_SHOT,
+            expected_baselines={"hirisplex_s": {"eye_color_auc": 0.90}},
+        ),
+    }
+    default_config = "default"
+
+    def load_data(self, config: EvalConfig) -> Any:
         raise FileNotFoundError(
             "HIrisPlex data not available. Requires 1000 Genomes genotypes at "
             "HIrisPlex-S SNP positions plus matched phenotype annotations for "
             "eye, hair, and skin color."
         )
 
-    def get_splits(self, data: Any) -> dict[str, Any]:
+    def get_splits(self, data: Any, config: EvalConfig) -> dict[str, Any]:
         raise NotImplementedError("Requires 1KG + phenotype data")
 
     def make_inputs(self, data: Any, split_data: Any) -> dict[str, Any]:
@@ -43,6 +54,6 @@ class HirisplexEval(Eval):
         raise NotImplementedError("Requires 1KG + phenotype data")
 
     def score(
-        self, y_true: np.ndarray, y_pred: np.ndarray
+        self, y_true: np.ndarray, y_pred: np.ndarray, config: EvalConfig
     ) -> dict[str, AncestryStratifiedMetric]:
         raise NotImplementedError("Requires 1KG + phenotype data")

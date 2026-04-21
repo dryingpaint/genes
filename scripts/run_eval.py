@@ -1,8 +1,8 @@
 """Run evals on Modal.
 
 Usage:
+    modal run scripts/run_eval.py --eval clinvar --model alphamissense --config alphamissense_balanced
     modal run scripts/run_eval.py --eval clinvar
-    modal run scripts/run_eval.py --eval clinvar --model alphamissense
     modal run scripts/run_eval.py --all
 """
 
@@ -15,23 +15,34 @@ from genbench.infra.volumes import VOLUME_MOUNTS
     image=cpu_image,
     volumes=VOLUME_MOUNTS,
     timeout=28800,
-    memory=16384,
+    memory=32768,
 )
-def remote_run(eval_name: str | None, model_name: str | None, run_all: bool) -> dict:
-    from genbench.registry import list_evals, list_models
+def remote_run(
+    eval_name: str | None,
+    model_name: str | None,
+    config_name: str | None,
+    run_all: bool,
+) -> dict:
+    from genbench.registry import list_evals, list_models, get_eval
     from genbench.runner import run_all as _run_all
     from genbench.runner import run_eval as _run_eval
     from genbench.reporting.templates import render_report
 
     print(f"Available evals: {list_evals()}")
     print(f"Available models: {list_models()}")
+
+    if eval_name:
+        ev = get_eval(eval_name)
+        print(f"Configs for {eval_name}: {ev.list_configs()}")
     print()
 
     if run_all:
-        results = _run_all(model=model_name)
+        results = _run_all(model=model_name, config=config_name)
     elif eval_name:
-        print(f"Running eval: {eval_name}" + (f" with model: {model_name}" if model_name else ""))
-        results = _run_eval(eval_name, model=model_name)
+        config_str = f" config={config_name}" if config_name else ""
+        model_str = f" model={model_name}" if model_name else ""
+        print(f"Running: {eval_name}{config_str}{model_str}")
+        results = _run_eval(eval_name, model=model_name, config=config_name)
     else:
         return {"error": "Specify --eval <name> or --all"}
 
@@ -44,10 +55,13 @@ def remote_run(eval_name: str | None, model_name: str | None, run_all: bool) -> 
             {
                 "task_id": r.task_id,
                 "model": r.model_name,
+                "config": r.metadata.get("config", ""),
+                "paper": r.metadata.get("paper", ""),
                 "metrics": {
                     k: v.aggregate.estimate if v.aggregate else None
                     for k, v in r.metrics.items()
                 },
+                "expected": r.metadata.get("expected_baselines", {}),
             }
             for r in results
         ],
@@ -58,11 +72,13 @@ def remote_run(eval_name: str | None, model_name: str | None, run_all: bool) -> 
 def main(
     eval: str = "",
     model: str = "",
+    config: str = "",
     all: bool = False,
 ):
     result = remote_run.remote(
         eval_name=eval or None,
         model_name=model or None,
+        config_name=config or None,
         run_all=all,
     )
 
@@ -76,5 +92,16 @@ def main(
     print(f"\n{result['n_results']} result(s)")
 
     for r in result.get("results", []):
-        metrics_str = ", ".join(f"{k}={v:.4f}" if v else f"{k}=N/A" for k, v in r["metrics"].items())
-        print(f"  {r['task_id']} + {r['model']}: {metrics_str}")
+        metrics_str = ", ".join(
+            f"{k}={v:.4f}" if isinstance(v, float) and v == v else f"{k}=N/A"
+            for k, v in r["metrics"].items()
+        )
+        config_str = f" [{r['config']}]" if r.get("config") else ""
+        paper_str = f" ({r['paper']})" if r.get("paper") else ""
+        print(f"  {r['task_id']} + {r['model']}{config_str}: {metrics_str}{paper_str}")
+
+        if r.get("expected"):
+            for model_name, expected in r["expected"].items():
+                if model_name == r["model"]:
+                    for metric, val in expected.items():
+                        print(f"    ^ expected {metric}={val:.4f}")

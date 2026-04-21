@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from genbench.eval import Eval
+from genbench.eval_config import EvalConfig
 from genbench.registry import register_eval
 from genbench.types import AncestryStratifiedMetric, SplitType
 
@@ -26,14 +27,25 @@ class Brca1SgeEval(Eval):
     default_baselines = ["evo2", "alphamissense", "null"]
     expected_ceiling = 0.97
 
-    def load_data(self) -> Any:
+    configs = {
+        "default": EvalConfig(
+            name="default",
+            description="BRCA1 SGE binary functional classification",
+            split_type=SplitType.ZERO_SHOT,
+            expected_baselines={"evo2": {"auroc": 0.95}},
+            paper="Brixi et al. Nature 2026",
+        ),
+    }
+    default_config = "default"
+
+    def load_data(self, config: EvalConfig) -> Any:
         raise FileNotFoundError(
             "BRCA1 SGE data needs xlsx parsing. The Findlay et al. supplementary "
             "table is downloaded but requires openpyxl to extract the 3,893 SNV "
             "functional classifications."
         )
 
-    def get_splits(self, data: Any) -> dict[str, Any]:
+    def get_splits(self, data: Any, config: EvalConfig) -> dict[str, Any]:
         raise NotImplementedError("Requires BRCA1 SGE xlsx parsing")
 
     def make_inputs(self, data: Any, split_data: Any) -> dict[str, Any]:
@@ -43,6 +55,6 @@ class Brca1SgeEval(Eval):
         raise NotImplementedError("Requires BRCA1 SGE xlsx parsing")
 
     def score(
-        self, y_true: np.ndarray, y_pred: np.ndarray
+        self, y_true: np.ndarray, y_pred: np.ndarray, config: EvalConfig
     ) -> dict[str, AncestryStratifiedMetric]:
         raise NotImplementedError("Requires BRCA1 SGE xlsx parsing")

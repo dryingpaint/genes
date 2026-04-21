@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from genbench.eval import Eval
+from genbench.eval_config import EvalConfig
 from genbench.registry import register_eval
 from genbench.types import AncestryStratifiedMetric, SplitType
 
@@ -26,14 +27,24 @@ class UkbQuantitativeEval(Eval):
     default_baselines = ["sbayesrc", "null"]
     expected_ceiling = None  # varies per trait, loaded from config H2_SNP
 
-    def load_data(self) -> Any:
+    configs = {
+        "default": EvalConfig(
+            name="default",
+            description="UKB quantitative trait PRS prediction",
+            split_type=SplitType.INDIVIDUAL,
+            expected_baselines={"sbayesrc": {"height_r2": 0.35}},
+        ),
+    }
+    default_config = "default"
+
+    def load_data(self, config: EvalConfig) -> Any:
         raise FileNotFoundError(
             "UK Biobank data not available. Requires approved UKB application "
             "with access to genotype data and phenotype fields for the 13 "
             "quantitative traits."
         )
 
-    def get_splits(self, data: Any) -> dict[str, Any]:
+    def get_splits(self, data: Any, config: EvalConfig) -> dict[str, Any]:
         raise NotImplementedError("Requires UKB access")
 
     def make_inputs(self, data: Any, split_data: Any) -> dict[str, Any]:
@@ -43,6 +54,6 @@ class UkbQuantitativeEval(Eval):
         raise NotImplementedError("Requires UKB access")
 
     def score(
-        self, y_true: np.ndarray, y_pred: np.ndarray
+        self, y_true: np.ndarray, y_pred: np.ndarray, config: EvalConfig
     ) -> dict[str, AncestryStratifiedMetric]:
         raise NotImplementedError("Requires UKB access")

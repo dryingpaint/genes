@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from genbench.eval import Eval
+from genbench.eval_config import EvalConfig
 from genbench.registry import register_eval
 from genbench.types import AncestryStratifiedMetric, SplitType
 
@@ -26,13 +27,23 @@ class PgxEval(Eval):
     default_baselines = ["pharmcat", "null"]
     expected_ceiling = 0.97
 
-    def load_data(self) -> Any:
+    configs = {
+        "default": EvalConfig(
+            name="default",
+            description="GeT-RM diplotype calling accuracy",
+            split_type=SplitType.ZERO_SHOT,
+            expected_baselines={"pharmcat": {"accuracy": 0.97}},
+        ),
+    }
+    default_config = "default"
+
+    def load_data(self, config: EvalConfig) -> Any:
         raise FileNotFoundError(
             "GeT-RM truth set not available. Request access from CDC Genetic "
             "Testing Reference Materials program (https://www.cdc.gov/labquality/get-rm/)."
         )
 
-    def get_splits(self, data: Any) -> dict[str, Any]:
+    def get_splits(self, data: Any, config: EvalConfig) -> dict[str, Any]:
         raise NotImplementedError("Requires GeT-RM truth set")
 
     def make_inputs(self, data: Any, split_data: Any) -> dict[str, Any]:
@@ -42,6 +53,6 @@ class PgxEval(Eval):
         raise NotImplementedError("Requires GeT-RM truth set")
 
     def score(
-        self, y_true: np.ndarray, y_pred: np.ndarray
+        self, y_true: np.ndarray, y_pred: np.ndarray, config: EvalConfig
     ) -> dict[str, AncestryStratifiedMetric]:
         raise NotImplementedError("Requires GeT-RM truth set")

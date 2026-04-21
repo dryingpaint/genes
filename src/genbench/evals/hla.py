@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from genbench.eval import Eval
+from genbench.eval_config import EvalConfig
 from genbench.registry import register_eval
 from genbench.types import AncestryStratifiedMetric, SplitType
 
@@ -25,13 +26,23 @@ class HlaEval(Eval):
     default_baselines = ["hla_la", "null"]
     expected_ceiling = 0.99
 
-    def load_data(self) -> Any:
+    configs = {
+        "default": EvalConfig(
+            name="default",
+            description="HLA typing concordance on 1KG Phase 3",
+            split_type=SplitType.INDIVIDUAL,
+            expected_baselines={"hla_la": {"concordance": 0.99}},
+        ),
+    }
+    default_config = "default"
+
+    def load_data(self, config: EvalConfig) -> Any:
         raise FileNotFoundError(
             "1KG HLA truth types not available. Requires 1000 Genomes Phase 3 "
             "HLA reference panel with validated 2-field resolution types."
         )
 
-    def get_splits(self, data: Any) -> dict[str, Any]:
+    def get_splits(self, data: Any, config: EvalConfig) -> dict[str, Any]:
         raise NotImplementedError("Requires 1KG HLA truth types")
 
     def make_inputs(self, data: Any, split_data: Any) -> dict[str, Any]:
@@ -41,6 +52,6 @@ class HlaEval(Eval):
         raise NotImplementedError("Requires 1KG HLA truth types")
 
     def score(
-        self, y_true: np.ndarray, y_pred: np.ndarray
+        self, y_true: np.ndarray, y_pred: np.ndarray, config: EvalConfig
     ) -> dict[str, AncestryStratifiedMetric]:
         raise NotImplementedError("Requires 1KG HLA truth types")
