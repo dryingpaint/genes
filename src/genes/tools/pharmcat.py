@@ -201,14 +201,16 @@ def run(
             with open(json_reports[0]) as _fh:
                 _raw = json.load(_fh)
                 output_summary["_report_keys"] = list(_raw.keys())[:20]
-                # Sample first gene report if exists
-                for key_path in ["reportContext", "geneReports", "geneCalls", "results"]:
-                    if key_path in _raw:
-                        val = _raw[key_path]
-                        if isinstance(val, dict):
-                            output_summary[f"_sample_{key_path}"] = list(val.keys())[:10]
-                        elif isinstance(val, list) and val:
-                            output_summary[f"_sample_{key_path}"] = str(val[0])[:500]
+                # Dump first gene entry for structure debugging
+                genes_list = _raw.get("genes", [])
+                if genes_list:
+                    first_gene = genes_list[0]
+                    output_summary["_first_gene_keys"] = list(first_gene.keys()) if isinstance(first_gene, dict) else str(type(first_gene))
+                    output_summary["_first_gene_sample"] = json.dumps(first_gene, default=str)[:1000]
+                drugs_list = _raw.get("drugs", [])
+                if drugs_list:
+                    output_summary["_first_drug_keys"] = list(drugs_list[0].keys()) if isinstance(drugs_list[0], dict) else str(type(drugs_list[0]))
+                    output_summary["_first_drug_sample"] = json.dumps(drugs_list[0], default=str)[:1000]
         except Exception as e:
             warnings.append(f"Failed to parse PharmCAT report: {e}")
             output_summary = {"parse_error": str(e)}
