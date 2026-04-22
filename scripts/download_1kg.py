@@ -49,6 +49,10 @@ def download_1kg():
     # Download 1KG Phase 3 chr22 VCF (GRCh38)
     # Using the original Phase 3 GRCh38 liftover from IGSR
     chr22_vcf = f"{out}/chr22.vcf.gz"
+    # Remove if exists but is too small (corrupted/failed download)
+    if os.path.exists(chr22_vcf) and os.path.getsize(chr22_vcf) < 1_000_000:
+        print(f"Removing corrupted file ({os.path.getsize(chr22_vcf)} bytes)")
+        os.remove(chr22_vcf)
     if not os.path.exists(chr22_vcf):
         print("Downloading 1KG chr22 VCF from NYGC high-coverage release...")
         # NYGC 1KG high-coverage GRCh38 (3,202 samples)
