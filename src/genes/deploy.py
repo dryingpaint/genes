@@ -77,7 +77,7 @@ def run_analysis(
     volumes={MOUNT_WORKDIR: vol_workdir},
     timeout=300,
 )
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def trigger_run(item: dict) -> dict:
     """HTTP endpoint to trigger a pipeline run.
 
@@ -111,7 +111,7 @@ def trigger_run(item: dict) -> dict:
     volumes={MOUNT_WORKDIR: vol_workdir},
     timeout=300,
 )
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def get_result(run_id: str) -> dict:
     """Check if a run completed and return results.
 
