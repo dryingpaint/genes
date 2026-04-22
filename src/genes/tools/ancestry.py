@@ -78,7 +78,7 @@ def infer_ancestry(
         merged_prefix = str(outdir / "merged")
 
         if not errors:
-            # Step 1: Convert sample VCF to plink2 format
+            # Step 1: Convert sample VCF to plink2 format (biallelic SNPs only)
             try:
                 run_cmd([
                     "plink2",
@@ -87,37 +87,60 @@ def infer_ancestry(
                     "--out", sample_prefix,
                     "--allow-extra-chr",
                     "--max-alleles", "2",
+                    "--snps-only",
+                    "--set-all-var-ids", "@:#:\\$r:\\$a",
+                    "--new-id-max-allele-len", "20",
                 ], timeout=600)
             except Exception as exc:
                 errors.append(f"plink2 VCF conversion failed: {exc}")
 
         if not errors:
-            # Step 2: Merge with 1KG reference panel (intersection of SNPs)
+            # Step 2: Find overlapping SNPs between sample and 1KG
             try:
-                # Extract overlapping SNPs
-                run_cmd([
-                    "plink2",
-                    "--bfile", sample_prefix,
-                    "--bmerge", _KG_PREFIX,
-                    "--make-bed",
-                    "--out", merged_prefix,
-                    "--allow-extra-chr",
-                ], timeout=1200)
-            except Exception as exc:
-                # Common: mismatched alleles. Try with --flip.
-                warnings.append(f"Merge attempt 1 failed ({exc}); retrying with SNP extraction.")
-                try:
+                # Extract variant IDs from sample
+                sample_snps = set()
+                with open(f"{sample_prefix}.bim") as f:
+                    for line in f:
+                        sample_snps.add(line.split()[1])
+
+                # Write shared SNP list
+                shared_snps_file = str(outdir / "shared_snps.txt")
+                n_shared = 0
+                with open(f"{_KG_PREFIX}.bim") as f_kg, open(shared_snps_file, "w") as f_out:
+                    for line in f_kg:
+                        vid = line.split()[1]
+                        if vid in sample_snps:
+                            f_out.write(vid + "\n")
+                            n_shared += 1
+
+                if n_shared < 100:
+                    errors.append(f"Only {n_shared} shared SNPs between sample and 1KG (need >100)")
+                else:
+                    warnings.append(f"Found {n_shared} shared SNPs with 1KG reference")
+
+                    # Extract shared SNPs from both datasets
                     run_cmd([
-                        "plink2",
-                        "--bfile", _KG_PREFIX,
-                        "--extract", f"{sample_prefix}.bim",
-                        "--bmerge", sample_prefix,
-                        "--make-bed",
-                        "--out", merged_prefix,
+                        "plink2", "--bfile", _KG_PREFIX,
+                        "--extract", shared_snps_file,
+                        "--make-bed", "--out", f"{outdir}/kg_shared",
                         "--allow-extra-chr",
-                    ], timeout=1200)
-                except Exception as exc2:
-                    errors.append(f"plink2 merge failed: {exc2}")
+                    ], timeout=300)
+                    run_cmd([
+                        "plink2", "--bfile", sample_prefix,
+                        "--extract", shared_snps_file,
+                        "--make-bed", "--out", f"{outdir}/sample_shared",
+                        "--allow-extra-chr",
+                    ], timeout=300)
+
+                    # Merge using plink1.9 --bmerge (plink2 uses --pmerge)
+                    run_cmd([
+                        "plink2", "--bfile", f"{outdir}/kg_shared",
+                        "--pmerge", f"{outdir}/sample_shared",
+                        "--make-bed", "--out", merged_prefix,
+                        "--allow-extra-chr",
+                    ], timeout=600)
+            except Exception as exc:
+                errors.append(f"SNP merge failed: {exc}")
 
         if not errors:
             # Step 3: PCA
