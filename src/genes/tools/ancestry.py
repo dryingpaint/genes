@@ -80,6 +80,8 @@ def infer_ancestry(
         if not errors:
             # Step 1: Convert sample VCF to plink2 format (biallelic SNPs only)
             try:
+                # plink2 may warn (exit 6) about all-ALT genotypes in variant-only VCFs.
+                # This is expected for single-sample VCFs — check if output was created.
                 conv = run_cmd([
                     "plink2",
                     "--vcf", vcf_path,
@@ -91,20 +93,12 @@ def infer_ancestry(
                     "--set-all-var-ids", "@:#:\\$r:\\$a",
                     "--new-id-max-allele-len", "20",
                     "--output-chr", "26",
+                    "--vcf-half-call", "m",
                 ], check=False, timeout=600)
-                if conv.returncode != 0:
-                    # plink2 exit 6 can mean sample count issues — try without sample filtering
-                    warnings.append(f"plink2 conversion warning (code {conv.returncode}): {conv.stderr[-500:]}")
-                    run_cmd([
-                        "plink2",
-                        "--vcf", vcf_path,
-                        "--make-bed",
-                        "--out", sample_prefix,
-                        "--allow-extra-chr",
-                        "--max-alleles", "2",
-                        "--snps-only",
-                        "--output-chr", "26",
-                    ], timeout=600)
+                if not Path(f"{sample_prefix}.bed").exists():
+                    errors.append(f"plink2 VCF conversion failed (code {conv.returncode}): {conv.stderr[-500:]}")
+                elif conv.returncode != 0:
+                    warnings.append(f"plink2 conversion completed with warnings (code {conv.returncode})")
             except Exception as exc:
                 errors.append(f"plink2 VCF conversion failed: {exc}")
 
