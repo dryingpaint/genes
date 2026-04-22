@@ -79,20 +79,34 @@ def download_1kg():
             "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v3.20130502.ALL.panel",
         ], check=True)
 
-    # Convert to plink2 binary format with common SNPs only (MAF > 5%)
+    # Convert to plink2 binary format with common biallelic SNPs
     print("Converting to plink format...")
-    subprocess.run([
+    result = subprocess.run([
         "plink2",
         "--vcf", chr22_vcf,
         "--maf", "0.05",
-        "--snps-only",
+        "--snps-only", "just-acgt",
         "--max-alleles", "2",
         "--make-bed",
         "--out", f"{out}/all_phase3_GRCh38",
-        "--set-all-var-ids", "@:#:\\$r:\\$a",
-        "--new-id-max-allele-len", "20",
         "--allow-extra-chr",
-    ], check=True)
+        "--chr", "1-22",  # Autosomes only
+    ], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"plink2 stdout: {result.stdout[-2000:]}")
+        print(f"plink2 stderr: {result.stderr[-2000:]}")
+        # Try without --chr filter (VCF may use 'chr22' format)
+        print("Retrying without --chr filter...")
+        subprocess.run([
+            "plink2",
+            "--vcf", chr22_vcf,
+            "--maf", "0.05",
+            "--snps-only", "just-acgt",
+            "--max-alleles", "2",
+            "--make-bed",
+            "--out", f"{out}/all_phase3_GRCh38",
+            "--allow-extra-chr",
+        ], check=True)
 
     vol_popgen.commit()
 
