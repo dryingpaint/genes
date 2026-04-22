@@ -80,7 +80,7 @@ def infer_ancestry(
         if not errors:
             # Step 1: Convert sample VCF to plink2 format (biallelic SNPs only)
             try:
-                run_cmd([
+                conv = run_cmd([
                     "plink2",
                     "--vcf", vcf_path,
                     "--make-bed",
@@ -90,8 +90,21 @@ def infer_ancestry(
                     "--snps-only", "just-acgt",
                     "--set-all-var-ids", "@:#:\\$r:\\$a",
                     "--new-id-max-allele-len", "20",
-                    "--output-chr", "26",  # Strip chr prefix to match 1KG format
-                ], timeout=600)
+                    "--output-chr", "26",
+                ], check=False, timeout=600)
+                if conv.returncode != 0:
+                    # plink2 exit 6 can mean sample count issues — try without sample filtering
+                    warnings.append(f"plink2 conversion warning (code {conv.returncode}): {conv.stderr[-500:]}")
+                    run_cmd([
+                        "plink2",
+                        "--vcf", vcf_path,
+                        "--make-bed",
+                        "--out", sample_prefix,
+                        "--allow-extra-chr",
+                        "--max-alleles", "2",
+                        "--snps-only",
+                        "--output-chr", "26",
+                    ], timeout=600)
             except Exception as exc:
                 errors.append(f"plink2 VCF conversion failed: {exc}")
 
