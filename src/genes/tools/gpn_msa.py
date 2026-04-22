@@ -43,7 +43,8 @@ def _lookup_variants(
     results: list[VariantScore] = []
 
     for chrom, pos, ref, alt in variants:
-        query_chrom = chrom if chrom.startswith("chr") else f"chr{chrom}"
+        # GPN-MSA scores use no chr prefix (e.g., "22" not "chr22")
+        query_chrom = chrom.replace("chr", "") if chrom.startswith("chr") else chrom
         score_found = False
 
         try:
@@ -180,7 +181,10 @@ def gpn_msa_lookup(
             "n_variants_queried": len(scored),
             "n_scores_found": n_found,
             "n_likely_deleterious": n_deleterious,
-            "scores": [v.model_dump() for v in scored],
+            "deleterious_variants": [
+                v.model_dump() for v in scored
+                if v.classifications.get("gpn_msa_class") == "likely_deleterious"
+            ][:1000],
         },
         errors=errors,
         warnings=warnings,
