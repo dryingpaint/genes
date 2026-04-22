@@ -23,6 +23,7 @@ _base = (
     .pip_install(
         "pydantic>=2.0", "polars>=1.0", "pysam>=0.22",
         "pandas>=2.2", "numpy>=1.26", "scipy>=1.12", "scikit-learn>=1.4",
+        "fastapi[standard]",
     )
 )
 

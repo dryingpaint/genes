@@ -14,7 +14,7 @@ vol_popgen = modal.Volume.from_name("genes-popgen", create_if_missing=True)
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("wget", "unzip", "plink2" if False else "wget")  # plink2 from apt not available
+    .apt_install("wget", "unzip", "tabix")
     .run_commands(
         "wget -q https://s3.amazonaws.com/plink2-assets/alpha5/"
         "plink2_linux_x86_64_20240818.zip -O /tmp/plink2.zip"
@@ -46,17 +46,19 @@ def download_1kg():
 
     os.makedirs(out, exist_ok=True)
 
-    # Download 1KG Phase 3 for chr22 as a starting point (full genome is ~30GB)
-    # Using the IGSR GRCh38 VCFs
-    base_url = "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20220422.3202_phased"
-
-    # Download chr22 VCF (~200MB) — enough for PCA-based ancestry inference
-    chr22_vcf = f"{out}/1kGP_high_coverage_Illumina.chr22.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
+    # Download 1KG Phase 3 chr22 VCF (GRCh38)
+    # Using the original Phase 3 GRCh38 liftover from IGSR
+    chr22_vcf = f"{out}/chr22.vcf.gz"
     if not os.path.exists(chr22_vcf):
-        print("Downloading 1KG chr22 VCF (~200 MB)...")
-        url = f"{base_url}/1kGP_high_coverage_Illumina.chr22.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
+        print("Downloading 1KG chr22 VCF...")
+        url = (
+            "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/"
+            "supporting/GRCh38_positions/"
+            "ALL.chr22.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz"
+        )
         subprocess.run(["wget", "--progress=dot:mega", "-O", chr22_vcf, url], check=True)
-        subprocess.run(["wget", "-q", "-O", f"{chr22_vcf}.tbi", f"{url}.tbi"], check=True)
+        # Generate index with tabix
+        subprocess.run(["tabix", "-p", "vcf", chr22_vcf], check=False)
 
     # Download population panel file
     panel = f"{out}/integrated_call_samples_v3.20130502.ALL.panel"
