@@ -25,30 +25,56 @@ def _safe_spawn(tool_fn: Any, *args: Any, **kwargs: Any) -> Any:
         return None
 
 
-def _safe_get(handle: Any, tool_name: str) -> ToolResult | None:
-    """Collect a spawned result, returning None on failure."""
+def _safe_get(handle: Any, tool_name: str, timeout: int = 1800) -> ToolResult | None:
+    """Collect a spawned result with timeout, returning error ToolResult on failure."""
     if handle is None:
         return None
     try:
-        return handle.get()
-    except Exception as exc:
-        logger.error("Tool %s failed during execution: %s", tool_name, exc)
+        return handle.get(timeout=timeout)
+    except TimeoutError:
+        logger.warning("Tool %s timed out after %ds", tool_name, timeout)
+        from datetime import datetime, timezone
         return ToolResult(
             tool_name=tool_name,
             version="unknown",
-            started_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
-            completed_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+            errors=[f"Timed out after {timeout}s — still running on Modal"],
+            warnings=["Result may complete later; check Modal dashboard"],
+        )
+    except Exception as exc:
+        logger.error("Tool %s failed during execution: %s", tool_name, exc)
+        from datetime import datetime, timezone
+        return ToolResult(
+            tool_name=tool_name,
+            version="unknown",
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
             errors=[str(exc)],
         )
+
+
+# Per-tool timeout for .get() — VEP gets longer since it processes the full VCF
+_TOOL_TIMEOUTS = {
+    "vep": 7200,       # 2 hours — full WGS annotation is slow
+    "alphamissense": 1800,
+    "spliceai": 1800,
+    "gpn_msa": 1800,
+    "pharmcat": 600,
+    "ancestry": 600,
+    "prs": 600,
+    "exomiser": 3600,
+}
 
 
 def _collect(
     result: PipelineResult,
     futures: dict[str, Any],
 ) -> None:
-    """Gather all spawned futures into the PipelineResult."""
+    """Gather all spawned futures into the PipelineResult with per-tool timeouts."""
     for name, handle in futures.items():
-        tool_result = _safe_get(handle, name)
+        timeout = _TOOL_TIMEOUTS.get(name, 1800)
+        tool_result = _safe_get(handle, name, timeout=timeout)
         if tool_result is not None:
             result.tool_results[name] = tool_result
             if not tool_result.success:
