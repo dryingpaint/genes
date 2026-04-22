@@ -12,6 +12,8 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import modal
+
 from genes.app import app
 from genes.infra.images import image_python_bio
 from genes.infra.volumes import MOUNT_WORKDIR, vol_workdir
@@ -122,7 +124,3 @@ def get_result(run_id: str) -> dict:
         with open(result_path) as f:
             return json.load(f)
     return {"status": "running_or_not_found", "run_id": run_id}
-
-
-# Also need modal import at top level for web_endpoint decorator
-import modal
