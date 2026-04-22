@@ -96,22 +96,27 @@ def infer_ancestry(
                 errors.append(f"plink2 VCF conversion failed: {exc}")
 
         if not errors:
-            # Step 2: Find overlapping SNPs between sample and 1KG
+            # Step 2: Match by chr:pos (robust to variant ID format differences)
             try:
-                # Extract variant IDs from sample
-                sample_snps = set()
+                # Build position set from sample: "chr\tpos" (from BIM cols 0,3)
+                sample_positions = set()
                 with open(f"{sample_prefix}.bim") as f:
                     for line in f:
-                        sample_snps.add(line.split()[1])
+                        parts = line.split()
+                        chrom = parts[0].replace("chr", "")
+                        pos = parts[3]
+                        sample_positions.add(f"{chrom}\t{pos}")
 
-                # Write shared SNP list
+                # Find shared positions in 1KG and write their variant IDs
                 shared_snps_file = str(outdir / "shared_snps.txt")
                 n_shared = 0
                 with open(f"{_KG_PREFIX}.bim") as f_kg, open(shared_snps_file, "w") as f_out:
                     for line in f_kg:
-                        vid = line.split()[1]
-                        if vid in sample_snps:
-                            f_out.write(vid + "\n")
+                        parts = line.split()
+                        chrom = parts[0].replace("chr", "")
+                        pos = parts[3]
+                        if f"{chrom}\t{pos}" in sample_positions:
+                            f_out.write(parts[1] + "\n")
                             n_shared += 1
 
                 if n_shared < 100:
@@ -119,24 +124,53 @@ def infer_ancestry(
                 else:
                     warnings.append(f"Found {n_shared} shared SNPs with 1KG reference")
 
-                    # Extract shared SNPs from both datasets
+                    # Extract shared SNPs from 1KG
                     run_cmd([
                         "plink2", "--bfile", _KG_PREFIX,
                         "--extract", shared_snps_file,
                         "--make-bed", "--out", f"{outdir}/kg_shared",
                         "--allow-extra-chr",
                     ], timeout=300)
+
+                    # Extract same positions from sample (using range file)
+                    sample_snps_file = str(outdir / "sample_snps.txt")
+                    sample_pos_set = set()
+                    with open(f"{outdir}/kg_shared.bim") as f:
+                        for line in f:
+                            parts = line.split()
+                            sample_pos_set.add(f"{parts[0].replace('chr', '')}\t{parts[3]}")
+                    with open(f"{sample_prefix}.bim") as f_in, open(sample_snps_file, "w") as f_out:
+                        for line in f_in:
+                            parts = line.split()
+                            chrom = parts[0].replace("chr", "")
+                            if f"{chrom}\t{parts[3]}" in sample_pos_set:
+                                f_out.write(parts[1] + "\n")
+
                     run_cmd([
                         "plink2", "--bfile", sample_prefix,
-                        "--extract", shared_snps_file,
+                        "--extract", sample_snps_file,
                         "--make-bed", "--out", f"{outdir}/sample_shared",
                         "--allow-extra-chr",
                     ], timeout=300)
 
-                    # Merge using plink1.9 --bmerge (plink2 uses --pmerge)
+                    # Merge — need matching chromosome names
+                    # Recode 1KG to match sample chr format
                     run_cmd([
                         "plink2", "--bfile", f"{outdir}/kg_shared",
-                        "--pmerge", f"{outdir}/sample_shared",
+                        "--output-chr", "26",  # Strip chr prefix
+                        "--make-bed", "--out", f"{outdir}/kg_recoded",
+                        "--allow-extra-chr",
+                    ], timeout=300)
+                    run_cmd([
+                        "plink2", "--bfile", f"{outdir}/sample_shared",
+                        "--output-chr", "26",
+                        "--make-bed", "--out", f"{outdir}/sample_recoded",
+                        "--allow-extra-chr",
+                    ], timeout=300)
+
+                    run_cmd([
+                        "plink2", "--bfile", f"{outdir}/kg_recoded",
+                        "--pmerge", f"{outdir}/sample_recoded",
                         "--make-bed", "--out", merged_prefix,
                         "--allow-extra-chr",
                     ], timeout=600)
