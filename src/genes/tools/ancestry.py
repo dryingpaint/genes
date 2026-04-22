@@ -201,9 +201,15 @@ def infer_ancestry(
             # Step 3: PCA — cap PCs to available SNPs
             pca_prefix = str(outdir / "pca")
             try:
-                # Count available SNPs
+                # Count available SNPs — PCA needs substantially more SNPs than PCs
                 n_snps_available = sum(1 for _ in open(f"{merged_prefix}.bim"))
-                actual_pcs = min(n_pcs, max(2, n_snps_available // 3))
+                if n_snps_available < 500:
+                    errors.append(
+                        f"Only {n_snps_available} shared SNPs (need ≥500 for reliable PCA). "
+                        "GIAB truth VCFs are too sparse for ancestry inference — "
+                        "use a full WGS callset instead."
+                    )
+                actual_pcs = min(n_pcs, max(2, n_snps_available // 10))
                 if actual_pcs < n_pcs:
                     warnings.append(f"Only {n_snps_available} SNPs; using {actual_pcs} PCs instead of {n_pcs}")
                 run_cmd([
