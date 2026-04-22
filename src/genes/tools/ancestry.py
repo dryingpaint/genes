@@ -205,28 +205,28 @@ def infer_ancestry(
                 errors.append(f"SNP merge failed: {exc}")
 
         if not errors:
-            # Step 3: PCA — cap PCs to available SNPs
+            # Step 3: PCA on 1KG reference, then project sample
             pca_prefix = str(outdir / "pca")
             try:
-                # Count available SNPs — PCA needs substantially more SNPs than PCs
-                n_snps_available = sum(1 for _ in open(f"{merged_prefix}.bim"))
-                if n_snps_available < 500:
-                    errors.append(
-                        f"Only {n_snps_available} shared SNPs (need ≥500 for reliable PCA). "
-                        "GIAB truth VCFs are too sparse for ancestry inference — "
-                        "use a full WGS callset instead."
-                    )
-                    raise ValueError("Insufficient SNPs")
-                actual_pcs = min(n_pcs, max(2, n_snps_available // 10))
-                if actual_pcs < n_pcs:
-                    warnings.append(f"Only {n_snps_available} SNPs; using {actual_pcs} PCs instead of {n_pcs}")
-                run_cmd([
+                # Run PCA on 1KG shared SNPs only (more robust than merged approach)
+                kg_bim = f"{outdir}/kg_shared.bim"
+                if not Path(kg_bim).exists():
+                    raise ValueError("1KG shared SNP file not found")
+
+                n_kg_snps = sum(1 for _ in open(kg_bim))
+                actual_pcs = min(n_pcs, max(2, n_kg_snps // 10))
+                warnings.append(f"Running PCA on {n_kg_snps} 1KG SNPs with {actual_pcs} PCs")
+
+                pca_result = run_cmd([
                     "plink2",
-                    "--bfile", merged_prefix,
+                    "--bfile", f"{outdir}/kg_shared",
                     "--pca", str(actual_pcs),
                     "--out", pca_prefix,
                     "--allow-extra-chr",
-                ], timeout=1200)
+                ], check=False, timeout=1200)
+
+                if pca_result.returncode != 0:
+                    errors.append(f"PCA failed (code {pca_result.returncode}): {pca_result.stderr[-500:]}")
             except Exception as exc:
                 errors.append(f"PCA failed: {exc}")
 
