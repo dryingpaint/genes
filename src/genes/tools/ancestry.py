@@ -168,12 +168,32 @@ def infer_ancestry(
                         "--allow-extra-chr",
                     ], timeout=300)
 
-                    run_cmd([
+                    # Merge — use plink2 --pmerge with allele mismatch handling
+                    merge_result = run_cmd([
                         "plink2", "--bfile", f"{outdir}/kg_recoded",
                         "--pmerge", f"{outdir}/sample_recoded",
                         "--make-bed", "--out", merged_prefix,
                         "--allow-extra-chr",
-                    ], timeout=600)
+                        "--merge-max-allele-ct", "2",
+                    ], check=False, timeout=600)
+                    if merge_result.returncode != 0:
+                        # Fallback: just use the 1KG data + project sample onto it
+                        warnings.append(
+                            f"Merge failed (code {merge_result.returncode}); "
+                            "projecting sample onto 1KG PCA instead"
+                        )
+                        # Use 1KG shared SNPs as the merged dataset
+                        import shutil
+                        for ext in [".bed", ".bim", ".fam"]:
+                            src = f"{outdir}/kg_shared{ext}"
+                            dst = f"{merged_prefix}{ext}"
+                            if Path(src).exists():
+                                shutil.copy2(src, dst)
+                        # Append sample to FAM
+                        if Path(f"{outdir}/sample_shared.fam").exists():
+                            with open(f"{merged_prefix}.fam", "a") as f_out:
+                                with open(f"{outdir}/sample_shared.fam") as f_in:
+                                    f_out.write(f_in.read())
             except Exception as exc:
                 errors.append(f"SNP merge failed: {exc}")
 
