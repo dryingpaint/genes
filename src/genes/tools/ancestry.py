@@ -209,6 +209,7 @@ def infer_ancestry(
                         "GIAB truth VCFs are too sparse for ancestry inference — "
                         "use a full WGS callset instead."
                     )
+                    raise ValueError("Insufficient SNPs")
                 actual_pcs = min(n_pcs, max(2, n_snps_available // 10))
                 if actual_pcs < n_pcs:
                     warnings.append(f"Only {n_snps_available} SNPs; using {actual_pcs} PCs instead of {n_pcs}")
