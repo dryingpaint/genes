@@ -198,14 +198,20 @@ def infer_ancestry(
                 errors.append(f"SNP merge failed: {exc}")
 
         if not errors:
-            # Step 3: PCA
+            # Step 3: PCA — cap PCs to available SNPs
             pca_prefix = str(outdir / "pca")
             try:
+                # Count available SNPs
+                n_snps_available = sum(1 for _ in open(f"{merged_prefix}.bim"))
+                actual_pcs = min(n_pcs, max(2, n_snps_available // 3))
+                if actual_pcs < n_pcs:
+                    warnings.append(f"Only {n_snps_available} SNPs; using {actual_pcs} PCs instead of {n_pcs}")
                 run_cmd([
                     "plink2",
                     "--bfile", merged_prefix,
-                    "--pca", str(n_pcs),
+                    "--pca", str(actual_pcs),
                     "--out", pca_prefix,
+                    "--allow-extra-chr",
                 ], timeout=1200)
             except Exception as exc:
                 errors.append(f"PCA failed: {exc}")
