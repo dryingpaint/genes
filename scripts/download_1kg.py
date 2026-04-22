@@ -50,14 +50,24 @@ def download_1kg():
     # Using the original Phase 3 GRCh38 liftover from IGSR
     chr22_vcf = f"{out}/chr22.vcf.gz"
     if not os.path.exists(chr22_vcf):
-        print("Downloading 1KG chr22 VCF...")
+        print("Downloading 1KG chr22 VCF from NYGC high-coverage release...")
+        # NYGC 1KG high-coverage GRCh38 (3,202 samples)
         url = (
-            "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/"
-            "supporting/GRCh38_positions/"
-            "ALL.chr22.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz"
+            "http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
+            "1000G_2504_high_coverage/working/20220422.3202_phased/"
+            "1kGP_high_coverage_Illumina.chr22.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
         )
-        subprocess.run(["wget", "--progress=dot:mega", "-O", chr22_vcf, url], check=True)
-        # Generate index with tabix
+        # Try NYGC URL first, fall back to original Phase 3
+        try:
+            subprocess.run(["wget", "--progress=dot:mega", "-O", chr22_vcf, url], check=True, timeout=1800)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            print("NYGC URL failed, trying original Phase 3...")
+            url2 = (
+                "http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/"
+                "ALL.chr22.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz"
+            )
+            subprocess.run(["wget", "--progress=dot:mega", "-O", chr22_vcf, url2], check=True, timeout=1800)
+        # Index
         subprocess.run(["tabix", "-p", "vcf", chr22_vcf], check=False)
 
     # Download population panel file
