@@ -87,9 +87,10 @@ def infer_ancestry(
                     "--out", sample_prefix,
                     "--allow-extra-chr",
                     "--max-alleles", "2",
-                    "--snps-only",
+                    "--snps-only", "just-acgt",
                     "--set-all-var-ids", "@:#:\\$r:\\$a",
                     "--new-id-max-allele-len", "20",
+                    "--output-chr", "26",  # Strip chr prefix to match 1KG format
                 ], timeout=600)
             except Exception as exc:
                 errors.append(f"plink2 VCF conversion failed: {exc}")
