@@ -1,4 +1,4 @@
-"""Download all Phase 1 datasets to Modal volumes.
+"""Download all datasets to Modal volumes.
 
 Usage: modal run scripts/ingest_all.py
 """
@@ -18,13 +18,17 @@ from genbench.infra.data_ingest import (
 
 @app.local_entrypoint()
 def main():
-    print("Starting Phase 1 data ingestion...\n")
+    print("Starting data ingestion...\n")
 
-    # Spawn all downloads in parallel
     tasks = {
-        "clinvar": ingest_clinvar.spawn(),
+        # ClinVar: latest + archived version for AlphaMissense reproduction
+        "clinvar_latest": ingest_clinvar.spawn(version="latest"),
+        "clinvar_20230115": ingest_clinvar.spawn(version="20230115"),
+        # ProteinGym: v1 (217 assays) + v0.1 (87 assays, SaProt's published eval)
+        "proteingym_v1": ingest_proteingym.spawn(version="v1"),
+        "proteingym_v0.1": ingest_proteingym.spawn(version="v0.1"),
+        # Other datasets
         "giab": ingest_giab.spawn(),
-        "proteingym": ingest_proteingym.spawn(),
         "brca1_sge": ingest_brca1_sge.spawn(),
         "dgrp": ingest_dgrp.spawn(),
         "arabidopsis": ingest_arabidopsis.spawn(),
@@ -32,7 +36,6 @@ def main():
         "baseline_scores": ingest_baseline_scores.spawn(),
     }
 
-    # Collect results, handling individual failures
     succeeded = 0
     failed = 0
     for name, future in tasks.items():

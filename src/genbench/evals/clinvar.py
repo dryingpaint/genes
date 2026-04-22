@@ -40,13 +40,15 @@ class ClinVarEval(Eval):
             name="alphamissense_balanced",
             description=(
                 "AlphaMissense published eval: missense variants balanced per gene "
-                "(genes with ≥5 P and ≥5 B). 612 genes, ~18,924 variants."
+                "(genes with ≥5 P and ≥5 B). ~612 genes, ~18,924 variants. "
+                "Uses archived ClinVar ~Q1 2023 to match paper's data vintage."
             ),
             filters={
                 "variant_type": "missense",
                 "balanced": True,
                 "min_per_gene": 5,
-                "min_review_stars": 2,  # multiple submitters or expert panel
+                "min_review_stars": 2,
+                "clinvar_version": "20230115",  # closest archived snapshot to paper
             },
             split_type=SplitType.ZERO_SHOT,
             split_params={},
@@ -60,8 +62,8 @@ class ClinVarEval(Eval):
         ),
         "all_snv": EvalConfig(
             name="all_snv",
-            description="All reviewed ClinVar SNVs, temporal split at 2023-12-31",
-            filters={"variant_type": "snv"},
+            description="All reviewed ClinVar SNVs (latest version), temporal split",
+            filters={"variant_type": "snv", "clinvar_version": "latest"},
             split_type=SplitType.TEMPORAL,
             split_params={"cutoff": "2023-12-31"},
             metrics=["auroc", "auprc", "balanced_accuracy"],
@@ -71,11 +73,24 @@ class ClinVarEval(Eval):
         ),
     }
 
-    def _load_base(self) -> pd.DataFrame:
-        """Load and do common filtering (GRCh38, reviewed, P/LP vs B/LB)."""
-        path = Path(DATASETS_PATH) / "clinvar" / "variant_summary.txt.gz"
-        if not path.exists():
-            raise FileNotFoundError(f"ClinVar data not found at {path}")
+    def _load_base(self, clinvar_version: str = "latest") -> pd.DataFrame:
+        """Load and do common filtering (GRCh38, reviewed, P/LP vs B/LB).
+
+        Args:
+            clinvar_version: "latest" uses current variant_summary.txt.gz.
+                A date like "20230115" filters to variants evaluated before that date
+                (approximating that ClinVar snapshot).
+        """
+        # Always load from variant_summary.txt.gz (has full history with dates)
+        for search_path in [
+            Path(DATASETS_PATH) / "clinvar" / "latest" / "variant_summary.txt.gz",
+            Path(DATASETS_PATH) / "clinvar" / "variant_summary.txt.gz",
+        ]:
+            if search_path.exists():
+                path = search_path
+                break
+        else:
+            raise FileNotFoundError("ClinVar variant_summary.txt.gz not found")
 
         df = pd.read_csv(path, sep="\t", dtype={"Chromosome": str}, low_memory=False)
         df = df[df["Assembly"] == "GRCh38"]
@@ -93,10 +108,19 @@ class ClinVarEval(Eval):
         df["submission_date"] = pd.to_datetime(df["LastEvaluated"], format="mixed", errors="coerce")
         df = df.dropna(subset=["submission_date"])
 
+        # If a specific version date is requested, filter to variants evaluated before that date.
+        # This approximates the ClinVar snapshot as of that date.
+        if clinvar_version != "latest":
+            cutoff = pd.Timestamp(f"{clinvar_version[:4]}-{clinvar_version[4:6]}-{clinvar_version[6:]}")
+            before = len(df)
+            df = df[df["submission_date"] <= cutoff]
+            print(f"  ClinVar version filter ({clinvar_version}): {len(df)}/{before} variants")
+
         return df
 
     def load_data(self, config: EvalConfig) -> pd.DataFrame:
-        df = self._load_base()
+        clinvar_version = config.filters.get("clinvar_version", "latest")
+        df = self._load_base(clinvar_version)
         filters = config.filters
 
         # Filter by review quality (star count)

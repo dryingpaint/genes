@@ -29,26 +29,46 @@ class DmsEval(Eval):
     split_type = SplitType.ZERO_SHOT
     expected_ceiling = 0.65
     default_baselines = ["saprot", "null"]
-    default_config = "substitutions_v1"
+    default_config = "substitutions_v0.1"
 
     configs = {
-        "substitutions_v1": EvalConfig(
-            name="substitutions_v1",
-            description="217 DMS assays, per-assay Spearman rho, aggregated by mean",
-            filters={"assay_type": "substitutions"},
+        "substitutions_v0.1": EvalConfig(
+            name="substitutions_v0.1",
+            description="87 DMS assays (ProteinGym v0.1, SaProt's published eval)",
+            filters={"assay_type": "substitutions", "proteingym_version": "v0.1"},
             split_type=SplitType.ZERO_SHOT,
             metrics=["mean_spearman_rho", "median_spearman_rho"],
             expected_baselines={
                 "saprot": {"mean_spearman_rho": 0.473},
             },
-            paper="Notin et al. NeurIPS 2023 / ProteinGym",
+            paper="Su et al. ICLR 2024 (SaProt on ProteinGym v0.1)",
+        ),
+        "substitutions_v1": EvalConfig(
+            name="substitutions_v1",
+            description="217 DMS assays (ProteinGym v1, current leaderboard)",
+            filters={"assay_type": "substitutions", "proteingym_version": "v1"},
+            split_type=SplitType.ZERO_SHOT,
+            metrics=["mean_spearman_rho", "median_spearman_rho"],
+            expected_baselines={},
+            paper="Notin et al. NeurIPS 2023 / ProteinGym v1",
         ),
     }
 
     def load_data(self, config: EvalConfig) -> dict[str, pd.DataFrame]:
-        base = Path(DATASETS_PATH) / "proteingym" / "ProteinGym_substitutions"
-        if not base.exists():
-            raise FileNotFoundError(f"ProteinGym data not found at {base}")
+        version = config.filters.get("proteingym_version", "v1")
+
+        # Try versioned path first, then unversioned fallback
+        for search_path in [
+            Path(DATASETS_PATH) / "proteingym" / version / "ProteinGym_substitutions",
+            Path(DATASETS_PATH) / "proteingym" / "ProteinGym_substitutions",
+        ]:
+            if search_path.exists():
+                base = search_path
+                break
+        else:
+            raise FileNotFoundError(
+                f"ProteinGym {version} data not found. Run: modal run scripts/ingest_all.py"
+            )
 
         assays = {}
         for f in sorted(base.glob("*.csv")):

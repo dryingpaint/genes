@@ -46,28 +46,36 @@ def _curl(url: str, dest: str, allow_fail: bool = False) -> bool:
     volumes={DATASETS_PATH: datasets_vol},
     timeout=3600,
 )
-def ingest_clinvar() -> str:
-    """Download ClinVar VCF and variant summary from NCBI FTP."""
-    base = Path(DATASETS_PATH) / "clinvar"
+def ingest_clinvar(version: str = "latest") -> str:
+    """Download ClinVar VCF and variant summary from NCBI FTP.
+
+    Args:
+        version: "latest" for current release, or a date like "20230107"
+            for a specific weekly archive snapshot.
+    """
+    base = Path(DATASETS_PATH) / "clinvar" / version
     if _already_downloaded(base, "clinvar"):
-        return "clinvar: already downloaded"
+        return f"clinvar/{version}: already downloaded"
 
     base.mkdir(parents=True, exist_ok=True)
 
-    files = [
-        (
-            "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz",
-            "clinvar.vcf.gz",
-        ),
-        (
-            "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi",
-            "clinvar.vcf.gz.tbi",
-        ),
-        (
-            "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz",
-            "variant_summary.txt.gz",
-        ),
-    ]
+    if version == "latest":
+        vcf_url = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz"
+        tbi_url = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi"
+        summary_url = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz"
+    else:
+        # Weekly archive: e.g., clinvar_20230107.vcf.gz
+        year = version[:4]
+        archive_base = f"https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/archive_2.0/{year}"
+        vcf_url = f"{archive_base}/clinvar_{version}.vcf.gz"
+        tbi_url = f"{archive_base}/clinvar_{version}.vcf.gz.tbi"
+        # Variant summary is only available for latest — download VCF for archived versions
+        summary_url = None
+
+    files = [(vcf_url, f"clinvar_{version}.vcf.gz"), (tbi_url, f"clinvar_{version}.vcf.gz.tbi")]
+    if summary_url:
+        files.append((summary_url, "variant_summary.txt.gz"))
+
     for url, fname in files:
         dest = base / fname
         if not dest.exists():
@@ -75,7 +83,7 @@ def ingest_clinvar() -> str:
 
     _mark_downloaded(base, "clinvar")
     datasets_vol.commit()
-    return "clinvar: downloaded"
+    return f"clinvar/{version}: downloaded"
 
 
 @app.function(
@@ -130,22 +138,31 @@ def ingest_giab() -> str:
     timeout=7200,
     memory=8192,
 )
-def ingest_proteingym() -> str:
-    """Download ProteinGym DMS substitution benchmark from HuggingFace."""
-    base = Path(DATASETS_PATH) / "proteingym"
+def ingest_proteingym(version: str = "v1") -> str:
+    """Download ProteinGym DMS substitution benchmark from HuggingFace.
+
+    Args:
+        version: "v0.1" (87 assays, SaProt's published eval) or
+                 "v1" (217 assays, current leaderboard).
+    """
+    from huggingface_hub import snapshot_download
+
+    repo_map = {
+        "v0.1": "OATML-Markslab/ProteinGym_v0.1",
+        "v1": "OATML-Markslab/ProteinGym",
+    }
+    repo_id = repo_map.get(version)
+    if not repo_id:
+        return f"proteingym: unknown version '{version}'. Use 'v0.1' or 'v1'."
+
+    base = Path(DATASETS_PATH) / "proteingym" / version
     if _already_downloaded(base, "proteingym"):
-        return "proteingym: already downloaded"
+        return f"proteingym/{version}: already downloaded"
 
     base.mkdir(parents=True, exist_ok=True)
 
-    # Clean up any bad files from previous attempts
-    for bad in base.glob("substitutions.zip*"):
-        bad.unlink()
-
-    from huggingface_hub import snapshot_download
-
     snapshot_download(
-        repo_id="OATML-Markslab/ProteinGym",
+        repo_id=repo_id,
         repo_type="dataset",
         allow_patterns=["ProteinGym_substitutions/*.csv", "ProteinGym_reference_file_substitutions.csv"],
         local_dir=str(base),
@@ -155,7 +172,7 @@ def ingest_proteingym() -> str:
 
     _mark_downloaded(base, "proteingym")
     datasets_vol.commit()
-    return f"proteingym: downloaded ({csv_count} assay CSVs from HuggingFace)"
+    return f"proteingym/{version}: downloaded ({csv_count} assay CSVs)"
 
 
 @app.function(
