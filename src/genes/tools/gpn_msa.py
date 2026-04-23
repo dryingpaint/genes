@@ -138,6 +138,20 @@ def gpn_msa_lookup(
                     variant_list.append((rec.chrom, rec.pos, rec.ref, alt_allele))
             vcf.close()
 
+            # GPN-MSA does sequential tabix lookups — too slow for >500K variants.
+            # Sample down to keep runtime under 10 min.
+            MAX_VARIANTS = 200_000
+            if len(variant_list) > MAX_VARIANTS:
+                import random
+                random.seed(42)
+                sampled = random.sample(variant_list, MAX_VARIANTS)
+                warnings.append(
+                    f"Sampled {MAX_VARIANTS:,} of {len(variant_list):,} variants "
+                    f"for GPN-MSA scoring (full genome too slow for sequential lookups). "
+                    f"Run on individual chromosomes for complete coverage."
+                )
+                variant_list = sampled
+
             scored = _lookup_variants(variant_list)
 
             # Write output TSV
