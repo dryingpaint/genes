@@ -59,6 +59,7 @@ import genes.tools.annotsv
 import genes.tools.classifycnv
 import genes.tools.cfdna
 import genes.tools.biolearn
+import genes.tools.traits
 
 
 @app.function(

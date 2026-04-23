@@ -60,7 +60,9 @@ _TOOL_TIMEOUTS = {
     "alphamissense": 1800,
     "spliceai": 1800,
     "gpn_msa": 1800,
+    "evee": 1800,
     "pharmcat": 600,
+    "traits": 300,
     "ancestry": 600,
     "prs": 600,
     "exomiser": 3600,
@@ -93,11 +95,12 @@ def germline_vcf_pipeline(request: AnalysisRequest) -> PipelineResult:
     and don't need VEP-annotated output. VEP runs alongside everything else.
     """
     from genes.tools import vep, alphamissense, spliceai, gpn_msa, pharmcat, prs, ancestry
+    from genes.tools import traits, evee
 
     result = PipelineResult(run_id=request.run_id, input_type=request.input_type)
     vcf_path = request.input_paths[0]
 
-    # All tools in parallel — VEP runs alongside everything else
+    # All tools in parallel
     futures: dict[str, Any] = {}
     futures["vep"] = _safe_spawn(vep.annotate, vcf_path, request.run_id)
     futures["alphamissense"] = _safe_spawn(
@@ -105,7 +108,9 @@ def germline_vcf_pipeline(request: AnalysisRequest) -> PipelineResult:
     )
     futures["spliceai"] = _safe_spawn(spliceai.spliceai_lookup, vcf_path, request.run_id)
     futures["gpn_msa"] = _safe_spawn(gpn_msa.gpn_msa_lookup, vcf_path, request.run_id)
+    futures["evee"] = _safe_spawn(evee.lookup_evee_scores, vcf_path, request.run_id)
     futures["pharmcat"] = _safe_spawn(pharmcat.run, vcf_path, request.run_id)
+    futures["traits"] = _safe_spawn(traits.lookup_traits, vcf_path, request.run_id)
     futures["ancestry"] = _safe_spawn(ancestry.infer_ancestry, vcf_path, request.run_id)
 
     if request.prs_traits:
