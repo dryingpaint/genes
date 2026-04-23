@@ -50,19 +50,20 @@ def _load_clinvar_index(scores_path: str) -> dict[str, dict]:
     timeout=600,
 )
 def lookup_evee_scores(
-    variants: list[dict],
+    vcf_path: str,
     run_id: str,
 ) -> ToolResult:
-    """Look up EVEE scores for a list of genomic variants.
+    """Look up EVEE scores from a VCF file.
 
     Args:
-        variants: List of dicts with keys: chrom, pos, ref, alt.
-            Optionally include gene, consequence.
+        vcf_path: Path to input VCF.
         run_id: Unique identifier for this run.
 
     Returns:
         ToolResult with per-variant scores and explanations.
     """
+    import pysam
+
     outdir = ensure_dir(f"{MOUNT_WORKDIR}/{run_id}/evee")
 
     with ToolTimer() as timer:
@@ -81,6 +82,17 @@ def lookup_evee_scores(
         except Exception as exc:
             errors.append(f"Failed to load ClinVar EVEE scores: {exc}")
             index = {}
+
+        # Extract variants from VCF
+        variants = []
+        try:
+            vcf = pysam.VariantFile(vcf_path)
+            for rec in vcf:
+                for alt in rec.alts or []:
+                    variants.append({"chrom": rec.chrom, "pos": rec.pos, "ref": rec.ref, "alt": alt})
+            vcf.close()
+        except Exception as exc:
+            errors.append(f"Failed to read VCF: {exc}")
 
         for v in variants:
             chrom = str(v.get("chrom", "")).replace("chr", "")
