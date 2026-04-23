@@ -25,6 +25,7 @@ _cpu_base = (
         "pyarrow>=15.0",
         "pydantic>=2.0",
         "pysam>=0.22",
+        "openpyxl>=3.1",
     )
 )
 
