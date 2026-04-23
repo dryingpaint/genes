@@ -4,6 +4,9 @@ Usage:
     modal run scripts/run_eval.py --eval clinvar --model alphamissense --config alphamissense_balanced
     modal run scripts/run_eval.py --eval clinvar
     modal run scripts/run_eval.py --all
+
+    # With visualization (saves predictions + generates plots)
+    modal run scripts/run_eval.py --eval clinvar --model alphamissense --save-viz
 """
 
 from genbench.app import app
@@ -22,6 +25,7 @@ def remote_run(
     model_name: str | None,
     config_name: str | None,
     run_all: bool,
+    save_viz: bool = False,
 ) -> dict:
     from genbench.registry import list_evals, list_models, get_eval
     from genbench.runner import run_all as _run_all
@@ -36,13 +40,19 @@ def remote_run(
         print(f"Configs for {eval_name}: {ev.list_configs()}")
     print()
 
+    output_dir = f"/data/results/viz" if save_viz else None
+
     if run_all:
-        results = _run_all(model=model_name, config=config_name)
+        results = _run_all(model=model_name, config=config_name, save_predictions=save_viz)
     elif eval_name:
         config_str = f" config={config_name}" if config_name else ""
         model_str = f" model={model_name}" if model_name else ""
-        print(f"Running: {eval_name}{config_str}{model_str}")
-        results = _run_eval(eval_name, model=model_name, config=config_name)
+        viz_str = " [+viz]" if save_viz else ""
+        print(f"Running: {eval_name}{config_str}{model_str}{viz_str}")
+        results = _run_eval(
+            eval_name, model=model_name, config=config_name,
+            save_predictions=save_viz, output_dir=output_dir,
+        )
     else:
         return {"error": "Specify --eval <name> or --all"}
 
@@ -74,12 +84,14 @@ def main(
     model: str = "",
     config: str = "",
     all: bool = False,
+    save_viz: bool = False,
 ):
     result = remote_run.remote(
         eval_name=eval or None,
         model_name=model or None,
         config_name=config or None,
         run_all=all,
+        save_viz=save_viz,
     )
 
     if "error" in result:
