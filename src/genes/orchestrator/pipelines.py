@@ -59,7 +59,7 @@ _TOOL_TIMEOUTS = {
     "vep": 7200,       # 2 hours — full WGS annotation is slow
     "alphamissense": 1800,
     "spliceai": 1800,
-    "gpn_msa": 1800,
+    "gpn_msa": 7200,  # GPN-MSA tabix lookups on full WGS take 1-2 hours
     "evee": 1800,
     "pharmcat": 600,
     "traits": 300,
