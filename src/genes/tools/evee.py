@@ -71,28 +71,31 @@ def lookup_evee_scores(
         warnings: list[str] = []
         results: list[dict] = []
 
-        # Load index
+        # Load index — skip entirely if no scores file exists
         try:
             index = _load_clinvar_index(_CLINVAR_SCORES_PATH)
             if not index:
                 warnings.append(
-                    "ClinVar EVEE scores file is empty or not found; "
-                    "returning unscored variants."
+                    "ClinVar EVEE scores not populated. "
+                    "Download from evee.goodfire.ai to enable variant explanations."
                 )
         except Exception as exc:
-            errors.append(f"Failed to load ClinVar EVEE scores: {exc}")
+            warnings.append(f"EVEE scores not available: {exc}")
             index = {}
 
-        # Extract variants from VCF
-        variants = []
-        try:
-            vcf = pysam.VariantFile(vcf_path)
-            for rec in vcf:
-                for alt in rec.alts or []:
-                    variants.append({"chrom": rec.chrom, "pos": rec.pos, "ref": rec.ref, "alt": alt})
-            vcf.close()
-        except Exception as exc:
-            errors.append(f"Failed to read VCF: {exc}")
+        if not index:
+            # No point parsing millions of variants if we have no scores
+            variants = []
+        else:
+            variants = []
+            try:
+                vcf = pysam.VariantFile(vcf_path)
+                for rec in vcf:
+                    for alt in rec.alts or []:
+                        variants.append({"chrom": rec.chrom, "pos": rec.pos, "ref": rec.ref, "alt": alt})
+                vcf.close()
+            except Exception as exc:
+                errors.append(f"Failed to read VCF: {exc}")
 
         for v in variants:
             chrom = str(v.get("chrom", "")).replace("chr", "")
@@ -158,7 +161,7 @@ def lookup_evee_scores(
             "total_queried": len(variants),
             "found": sum(1 for r in results if r["status"] == "found"),
             "not_found": sum(1 for r in results if r["status"] == "not_found"),
-            "results": results,
+            "scored_variants": [r for r in results if r.get("score") is not None][:500],
         },
         errors=errors,
         warnings=warnings,
