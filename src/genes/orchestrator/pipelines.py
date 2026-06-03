@@ -139,43 +139,37 @@ def germline_vcf_pipeline(request: AnalysisRequest) -> PipelineResult:
 
 
 def germline_bam_pipeline(request: AnalysisRequest) -> PipelineResult:
-    """DeepVariant -> germline_vcf_pipeline + [Cyrius, HLA] in parallel."""
+    """[DeepVariant, Cyrius, HLA] spawn together; once DeepVariant returns,
+    the VCF-stage tools spawn on the called VCF. All futures collect at the end
+    so BAM-only tools race the VCF stage instead of waiting for it.
+    """
     from genes.tools import deepvariant, cyrius, hla
 
     result = PipelineResult(run_id=request.run_id, input_type=request.input_type)
     bam_path = request.input_paths[0]
 
-    # Step 1: Variant calling with DeepVariant
-    try:
-        dv_result = deepvariant.call_variants.remote(bam_path, request.run_id)
-        result.tool_results["deepvariant"] = dv_result
-    except Exception as exc:
-        result.errors.append(f"DeepVariant failed: {exc}")
-        result.finalize()
-        return result
-
-    if not dv_result.success or not dv_result.output_paths:
-        result.errors.append("DeepVariant did not produce output VCF.")
-        result.finalize()
-        return result
-
-    called_vcf = dv_result.output_paths[0]
-
-    # Step 2: Run germline VCF pipeline on the called VCF, plus BAM-specific tools
-    # Launch BAM-specific tools in parallel with the VCF sub-pipeline
     bam_futures: dict[str, Any] = {}
     bam_futures["cyrius"] = _safe_spawn(cyrius.call_cyp2d6, bam_path, request.run_id)
     bam_futures["hla"] = _safe_spawn(hla.type_hla, bam_path, request.run_id)
+    dv_handle = _safe_spawn(deepvariant.call_variants, bam_path, request.run_id)
 
-    # Run the VCF sub-pipeline (this blocks but internally parallelizes)
+    dv_result = _safe_get(dv_handle, "deepvariant", timeout=_TOOL_TIMEOUTS.get("deepvariant", 7200))
+    if dv_result is None or not dv_result.success or not dv_result.output_paths:
+        if dv_result is not None:
+            result.tool_results["deepvariant"] = dv_result
+        result.errors.append("DeepVariant did not produce output VCF.")
+        _collect(result, bam_futures)
+        result.finalize()
+        return result
+
+    result.tool_results["deepvariant"] = dv_result
+    called_vcf = dv_result.output_paths[0]
+
     vcf_request = request.model_copy(update={"input_paths": [called_vcf]})
     vcf_result = germline_vcf_pipeline(vcf_request)
-
-    # Merge VCF pipeline results into our result
     result.tool_results.update(vcf_result.tool_results)
     result.errors.extend(vcf_result.errors)
 
-    # Collect BAM-specific results
     _collect(result, bam_futures)
     result.finalize()
     return result
@@ -187,58 +181,46 @@ def germline_bam_pipeline(request: AnalysisRequest) -> PipelineResult:
 
 
 def somatic_pipeline(request: AnalysisRequest) -> PipelineResult:
-    """Mutect2 -> VEP -> [OncoKB/CIViC, SigProfiler, MSIsensor] in parallel."""
-    from genes.tools import vep
+    """Fan-out as soon as each input is ready:
+      - MSIsensor uses the BAMs only — spawned alongside Mutect2.
+      - SigProfiler uses the raw somatic VCF — spawned alongside VEP.
+      - OncoKB/CIViC needs the VEP-annotated VCF — spawned after VEP.
+    """
+    from genes.tools import vep, mutect2
 
     result = PipelineResult(run_id=request.run_id, input_type=request.input_type)
     tumor_bam = request.input_paths[0]
     normal_bam = request.input_paths[1] if len(request.input_paths) > 1 else None
 
-    # Step 1: Somatic variant calling with Mutect2
-    try:
-        from genes.tools import mutect2
-
-        mutect_kwargs: dict[str, Any] = {
-            "tumor_bam": tumor_bam,
-            "run_id": request.run_id,
-        }
-        if normal_bam:
-            mutect_kwargs["normal_bam"] = normal_bam
-        mutect_result = mutect2.call_somatic.remote(**mutect_kwargs)
-        result.tool_results["mutect2"] = mutect_result
-    except ImportError:
-        result.errors.append("Mutect2 tool not yet available.")
-        result.finalize()
-        return result
-    except Exception as exc:
-        result.errors.append(f"Mutect2 failed: {exc}")
-        result.finalize()
-        return result
-
-    if not mutect_result.success or not mutect_result.output_paths:
-        result.errors.append("Mutect2 did not produce output VCF.")
-        result.finalize()
-        return result
-
-    somatic_vcf = mutect_result.output_paths[0]
-
-    # Step 2: VEP annotation
-    try:
-        vep_result = vep.annotate.remote(somatic_vcf, request.run_id)
-        result.tool_results["vep"] = vep_result
-    except Exception as exc:
-        result.errors.append(f"VEP failed: {exc}")
-        result.finalize()
-        return result
-
-    annotated_vcf = vep_result.output_summary.get("annotated_vcf", somatic_vcf)
-
-    # Step 3: Parallel somatic interpretation tools
     futures: dict[str, Any] = {}
 
     try:
-        from genes.tools import sigprofiler
+        from genes.tools import msisensor
+        futures["msisensor"] = _safe_spawn(
+            msisensor.score, tumor_bam, request.run_id, normal_bam=normal_bam,
+        )
+    except ImportError:
+        result.errors.append("MSIsensor tool not yet available; skipping.")
 
+    mutect_kwargs: dict[str, Any] = {"tumor_bam": tumor_bam, "run_id": request.run_id}
+    if normal_bam:
+        mutect_kwargs["normal_bam"] = normal_bam
+    mutect_handle = _safe_spawn(mutect2.call_somatic, **mutect_kwargs)
+
+    mutect_result = _safe_get(mutect_handle, "mutect2", timeout=_TOOL_TIMEOUTS.get("mutect2", 7200))
+    if mutect_result is None or not mutect_result.success or not mutect_result.output_paths:
+        if mutect_result is not None:
+            result.tool_results["mutect2"] = mutect_result
+        result.errors.append("Mutect2 did not produce output VCF.")
+        _collect(result, futures)
+        result.finalize()
+        return result
+
+    result.tool_results["mutect2"] = mutect_result
+    somatic_vcf = mutect_result.output_paths[0]
+
+    try:
+        from genes.tools import sigprofiler
         futures["sigprofiler"] = _safe_spawn(
             sigprofiler.analyze, somatic_vcf, request.run_id,
             tumor_type=request.tumor_type,
@@ -246,25 +228,25 @@ def somatic_pipeline(request: AnalysisRequest) -> PipelineResult:
     except ImportError:
         result.errors.append("SigProfiler tool not yet available; skipping.")
 
+    vep_handle = _safe_spawn(vep.annotate, somatic_vcf, request.run_id)
+    vep_result = _safe_get(vep_handle, "vep", timeout=_TOOL_TIMEOUTS.get("vep", 7200))
+    if vep_result is None:
+        result.errors.append("VEP did not return a result.")
+        _collect(result, futures)
+        result.finalize()
+        return result
+
+    result.tool_results["vep"] = vep_result
+    annotated_vcf = vep_result.output_summary.get("annotated_vcf", somatic_vcf)
+
     try:
         from genes.tools import oncokb_civic
-
         futures["oncokb_civic"] = _safe_spawn(
             oncokb_civic.annotate, annotated_vcf, request.run_id,
             tumor_type=request.tumor_type,
         )
     except ImportError:
         result.errors.append("OncoKB/CIViC tool not yet available; skipping.")
-
-    try:
-        from genes.tools import msisensor
-
-        futures["msisensor"] = _safe_spawn(
-            msisensor.score, tumor_bam, request.run_id,
-            normal_bam=normal_bam,
-        )
-    except ImportError:
-        result.errors.append("MSIsensor tool not yet available; skipping.")
 
     _collect(result, futures)
     result.finalize()
