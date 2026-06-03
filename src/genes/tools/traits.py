@@ -9,6 +9,7 @@ from __future__ import annotations
 from genes.app import app
 from genes.infra.images import image_python_bio
 from genes.infra.volumes import MOUNT_WORKDIR, vol_workdir
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir
 
 # Well-characterized trait/health SNPs with known effects.
@@ -190,7 +191,11 @@ def lookup_traits(
         version="1.0",
         started_at=timer.started_at,
         completed_at=timer.completed_at,
-        input_summary={"vcf_path": vcf_path, "run_id": run_id},
+        input_summary={
+            "vcf_path": vcf_path,
+            "run_id": run_id,
+            PROVENANCE_KEY: stamp("reference_genome"),
+        },
         output_paths=[],
         output_summary={
             "n_variants_checked": len(KNOWN_VARIANTS),

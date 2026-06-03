@@ -13,6 +13,7 @@ from pathlib import Path
 from genes.app import app
 from genes.infra.images import image_python_bio
 from genes.infra.volumes import MOUNT_WORKDIR, vol_workdir
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir
 
 # All clocks to run by default
@@ -135,6 +136,7 @@ def compute_clocks(
             "chronological_age": chronological_age,
             "sex": sex,
             "clocks": clock_list,
+            PROVENANCE_KEY: stamp(),
         },
         output_paths=output_paths,
         output_summary=summary,

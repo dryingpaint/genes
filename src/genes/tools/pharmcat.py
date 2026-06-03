@@ -19,6 +19,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 PHARMCAT_JAR = "/opt/pharmcat.jar"
@@ -222,6 +223,7 @@ def run(
             "vcf_path": vcf_path,
             "run_id": run_id,
             "sample_id": sample_id,
+            PROVENANCE_KEY: stamp("reference_genome"),
         },
         output_paths=output_paths,
         output_summary=output_summary,

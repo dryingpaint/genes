@@ -21,6 +21,7 @@ from genes.infra.volumes import (
     vol_vep,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 VEP_CACHE_DIR = f"{MOUNT_VEP}"
@@ -159,6 +160,12 @@ def annotate(
             "run_id": run_id,
             "assembly": assembly,
             "use_alphamissense": use_alphamissense,
+            PROVENANCE_KEY: stamp(
+                "reference_genome",
+                "vep_cache",
+                "alphamissense_plugin",
+                "clinvar",
+            ),
         },
         output_paths=output_paths,
         output_summary={

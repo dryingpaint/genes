@@ -18,6 +18,7 @@ from genes.infra.volumes import (
     vol_popgen,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 # 1000 Genomes reference panel (plink2 binary format)
@@ -293,6 +294,7 @@ def infer_ancestry(
             "run_id": run_id,
             "k_values": k_values,
             "n_pcs": n_pcs,
+            PROVENANCE_KEY: stamp("kg_panel", "reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,

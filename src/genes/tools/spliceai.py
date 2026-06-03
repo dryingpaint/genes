@@ -22,6 +22,7 @@ from genes.infra.volumes import (
     vol_precomputed,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, VariantScore, ensure_dir
 
 # Pre-computed SpliceAI scores (tabix-indexed VCF)
@@ -236,6 +237,7 @@ def spliceai_lookup(
             "vcf_path": vcf_path,
             "run_id": run_id,
             "n_variants_queried": len(all_results),
+            PROVENANCE_KEY: stamp("spliceai_scores"),
         },
         output_paths=[str(output_tsv)] if output_tsv.exists() else [],
         output_summary={

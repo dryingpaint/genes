@@ -18,6 +18,7 @@ from genes.infra.volumes import (
     vol_precomputed,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir
 
 _EVE_DIR = f"{MOUNT_PRECOMPUTED}/eve"
@@ -133,6 +134,7 @@ def lookup_eve_scores(
             "num_variants": len(variants),
             "genes_queried": list(by_gene.keys()),
             "run_id": run_id,
+            PROVENANCE_KEY: stamp("eve_scores"),
         },
         output_paths=[output_tsv] if scored else [],
         output_summary={

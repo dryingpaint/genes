@@ -20,6 +20,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 _VALID_MODEL_TYPES = {"WGS", "WES", "PACBIO", "ONT_R104"}
@@ -124,6 +125,7 @@ def call_variants(
             "run_id": run_id,
             "model_type": model_type,
             "regions_bed": regions_bed,
+            PROVENANCE_KEY: stamp("reference_genome", "deepvariant_model"),
         },
         output_paths=output_paths,
         output_summary=summary,

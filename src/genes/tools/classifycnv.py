@@ -16,6 +16,7 @@ from genes.infra.volumes import (
     vol_clinical,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 _CLASSIFYCNV_BIN = "/opt/ClassifyCNV/ClassifyCNV.py"
@@ -140,6 +141,7 @@ def classify_cnv(
             "cnv_input_path": cnv_input_path,
             "run_id": run_id,
             "genome_build": genome_build,
+            PROVENANCE_KEY: stamp("reference_genome", "clinvar"),
         },
         output_paths=output_paths,
         output_summary=summary,

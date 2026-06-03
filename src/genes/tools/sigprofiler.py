@@ -18,6 +18,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir
 
 _REFERENCE_GENOME = "GRCh38"
@@ -168,6 +169,7 @@ def analyze_signatures(
             "run_id": run_id,
             "sample_name": sample_name,
             "genome": genome,
+            PROVENANCE_KEY: stamp("reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,

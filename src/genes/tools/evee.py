@@ -17,6 +17,7 @@ from genes.infra.volumes import (
     MOUNT_WORKDIR,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, VariantScore, ensure_dir
 
 # Pre-downloaded ClinVar scores with EVEE annotations
@@ -155,6 +156,7 @@ def lookup_evee_scores(
         input_summary={
             "num_variants": len(variants),
             "run_id": run_id,
+            PROVENANCE_KEY: stamp("evee_scores", "clinvar"),
         },
         output_paths=[output_json],
         output_summary={

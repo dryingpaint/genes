@@ -24,6 +24,7 @@ from genes.infra.volumes import (
     vol_precomputed,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, VariantScore, ensure_dir
 
 # Pre-computed GPN-MSA scores (tabix-indexed TSV.gz)
@@ -189,6 +190,7 @@ def gpn_msa_lookup(
             "vcf_path": vcf_path,
             "run_id": run_id,
             "n_variants_queried": len(scored),
+            PROVENANCE_KEY: stamp("gpn_msa_scores"),
         },
         output_paths=[str(output_tsv)] if output_tsv.exists() else [],
         output_summary={

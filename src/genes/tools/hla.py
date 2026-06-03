@@ -22,6 +22,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 _HLA_LA_GRAPH = f"{MOUNT_HLA}/PRG_MHC_GRCh38_withIMGT"
@@ -112,6 +113,7 @@ def type_hla_dna(
             "run_id": run_id,
             "sample_id": sample_id,
             "data_type": "dna",
+            PROVENANCE_KEY: stamp("hla_reference", "reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,
@@ -207,6 +209,7 @@ def type_hla_rna(
             "run_id": run_id,
             "sample_id": sample_id,
             "data_type": "rna",
+            PROVENANCE_KEY: stamp("hla_reference", "reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,

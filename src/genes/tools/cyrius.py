@@ -18,6 +18,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
@@ -108,6 +109,7 @@ def call_cyp2d6(
             "bam_path": bam_path,
             "run_id": run_id,
             "genome_build": genome_build,
+            PROVENANCE_KEY: stamp("reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,

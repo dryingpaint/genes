@@ -17,6 +17,7 @@ from genes.infra.volumes import (
     vol_clinical,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 _ANNOTSV_BIN = "/opt/AnnotSV-3.4.2/bin/AnnotSV"
@@ -149,6 +150,7 @@ def annotate_sv(
             "genome_build": genome_build,
             "sv_min_size": sv_min_size,
             "annotation_mode": annotation_mode,
+            PROVENANCE_KEY: stamp("reference_genome", "clinvar"),
         },
         output_paths=output_paths,
         output_summary=summary,

@@ -22,6 +22,7 @@ from genes.infra.volumes import (
     MOUNT_WORKDIR,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir
 
 _ONCOKB_BASE = "https://www.oncokb.org/api/v1"
@@ -263,6 +264,7 @@ def lookup_actionability(
             "num_variants": len(variants),
             "tumor_type": tumor_type,
             "run_id": run_id,
+            PROVENANCE_KEY: stamp(),
         },
         output_paths=output_paths,
         output_summary=summary,

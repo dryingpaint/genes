@@ -19,6 +19,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 _GATK = "/opt/gatk-4.5.0.0/gatk"
@@ -221,6 +222,7 @@ def call_somatic_variants(
             "run_id": run_id,
             "intervals": intervals,
             "mode": "tumor_normal" if normal_bam else "tumor_only",
+            PROVENANCE_KEY: stamp("reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,

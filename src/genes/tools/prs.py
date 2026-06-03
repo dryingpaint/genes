@@ -19,6 +19,7 @@ from genes.infra.volumes import (
     vol_popgen,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 PGS_CATALOG_DIR = f"{MOUNT_POPGEN}/pgs_catalog"
@@ -172,6 +173,7 @@ def calculate(
             "run_id": run_id,
             "traits": traits,
             "n_traits_requested": len(traits),
+            PROVENANCE_KEY: stamp("pgs_catalog"),
         },
         output_paths=output_paths,
         output_summary={

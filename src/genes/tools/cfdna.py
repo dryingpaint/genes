@@ -21,6 +21,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 # ----- Paths within volumes -----
@@ -137,7 +138,12 @@ def run_ichorcna(
         version="0.5.0",
         started_at=timer.started_at,
         completed_at=timer.completed_at,
-        input_summary={"bam_path": bam_path, "run_id": run_id, "bin_size": bin_size},
+        input_summary={
+            "bam_path": bam_path,
+            "run_id": run_id,
+            "bin_size": bin_size,
+            PROVENANCE_KEY: stamp("cfdna_refs", "reference_genome"),
+        },
         output_paths=output_paths,
         output_summary=summary,
         errors=errors,
@@ -234,6 +240,7 @@ def run_griffin(
             "run_id": run_id,
             "tfbs_list": sites_bed,
             "window_size": window_size,
+            PROVENANCE_KEY: stamp("cfdna_refs", "reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,
@@ -340,7 +347,12 @@ def run_uxm(
         version="1.0.0",
         started_at=timer.started_at,
         completed_at=timer.completed_at,
-        input_summary={"bam_path": bam_path, "run_id": run_id, "atlas_dir": atlas},
+        input_summary={
+            "bam_path": bam_path,
+            "run_id": run_id,
+            "atlas_dir": atlas,
+            PROVENANCE_KEY: stamp("cfdna_refs"),
+        },
         output_paths=output_paths,
         output_summary=summary,
         errors=errors,

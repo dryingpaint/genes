@@ -20,6 +20,7 @@ from genes.infra.volumes import (
     vol_precomputed,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, VariantScore, ensure_dir
 
 # AlphaMissense pre-computed TSV (tabix-indexed)
@@ -183,6 +184,7 @@ def alphamissense_lookup(
             "run_id": run_id,
             "vcf_path": vcf_path,
             "n_variants_queried": len(scored),
+            PROVENANCE_KEY: stamp("alphamissense_scores"),
         },
         output_paths=[str(output_tsv)] if output_tsv.exists() else [],
         output_summary={

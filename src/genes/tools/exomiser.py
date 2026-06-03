@@ -21,6 +21,7 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
+from genes.infra.provenance import PROVENANCE_KEY, stamp
 from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
 
 _EXOMISER_JAR = "/opt/exomiser-cli-14.0.0/exomiser-cli-14.0.0.jar"
@@ -202,6 +203,7 @@ def prioritize_variants(
             "run_id": run_id,
             "inheritance_modes": inheritance_modes or ["AD", "AR", "XD", "XR"],
             "frequency_threshold": frequency_threshold,
+            PROVENANCE_KEY: stamp("exomiser_data", "reference_genome"),
         },
         output_paths=output_paths,
         output_summary=summary,
