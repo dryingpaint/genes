@@ -24,8 +24,8 @@ from genes.infra.volumes import (
     vol_precomputed,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, VariantScore, ensure_dir
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, VariantScore, build_result, ensure_dir
 
 # Pre-computed GPN-MSA scores (tabix-indexed TSV.gz)
 # Columns: #chrom  pos  ref  alt  llr
@@ -181,19 +181,10 @@ def gpn_msa_lookup(
         if v.classifications.get("gpn_msa_class") == "likely_deleterious"
     )
 
-    return ToolResult(
-        tool_name="gpn_msa",
-        version="1.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "vcf_path": vcf_path,
-            "run_id": run_id,
-            "n_variants_queried": len(scored),
-            PROVENANCE_KEY: stamp("gpn_msa_scores"),
-        },
-        output_paths=[str(output_tsv)] if output_tsv.exists() else [],
-        output_summary={
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={
             "n_variants_queried": len(scored),
             "n_scores_found": n_found,
             "n_likely_deleterious": n_deleterious,
@@ -201,7 +192,20 @@ def gpn_msa_lookup(
                 v.model_dump() for v in scored
                 if v.classifications.get("gpn_msa_class") == "likely_deleterious"
             ][:1000],
+            "output_tsv": str(output_tsv) if output_tsv.exists() else None,
         },
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="gpn_msa",
+    version="1.0",
+    modes=(Mode.GERMLINE, Mode.SOMATIC),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=7200,
+    reference_artifacts=("gpn_msa_scores",),
+)
+register(SPEC, gpn_msa_lookup)

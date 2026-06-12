@@ -22,8 +22,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _HLA_LA_GRAPH = f"{MOUNT_HLA}/PRG_MHC_GRCh38_withIMGT"
 
@@ -103,20 +103,17 @@ def type_hla_dna(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="hla_la",
-        version="1.0.3",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "bam_path": bam_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.BAM.value: bam_path},
+        payload={
+            "engine": "hla_la",
+            "engine_version": "1.0.3",
             "sample_id": sample_id,
             "data_type": "dna",
-            PROVENANCE_KEY: stamp("hla_reference", "reference_genome"),
+            "calls": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
@@ -199,20 +196,17 @@ def type_hla_rna(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="arcashla",
-        version="0.6.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "bam_path": bam_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.BAM.value: bam_path},
+        payload={
+            "engine": "arcashla",
+            "engine_version": "0.6.0",
             "sample_id": sample_id,
             "data_type": "rna",
-            PROVENANCE_KEY: stamp("hla_reference", "reference_genome"),
+            "calls": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
@@ -228,6 +222,7 @@ def type_hla_rna(
 def type_hla(
     bam_path: str,
     run_id: str,
+    *,
     data_type: str = "dna",
     sample_id: str = "sample",
     threads: int = 8,
@@ -260,3 +255,15 @@ def type_hla(
         )
     else:
         raise ValueError(f"data_type must be 'dna' or 'rna', got {data_type!r}")
+
+
+SPEC = ToolSpec(
+    name="hla",
+    version="1.0",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.BAM,),
+    criticality=Criticality.STANDARD,
+    timeout_s=3600,
+    reference_artifacts=("hla_reference", "reference_genome"),
+)
+register(SPEC, type_hla)

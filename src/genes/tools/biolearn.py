@@ -13,8 +13,8 @@ from pathlib import Path
 from genes.app import app
 from genes.infra.images import image_python_bio
 from genes.infra.volumes import MOUNT_WORKDIR, vol_workdir
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir
 
 # All clocks to run by default
 DEFAULT_CLOCKS = [
@@ -125,21 +125,27 @@ def compute_clocks(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="biolearn",
-        version="0.5.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "methylation_path": methylation_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.METHYLATION_MATRIX.value: methylation_path},
+        payload={
             "chronological_age": chronological_age,
             "sex": sex,
-            "clocks": clock_list,
-            PROVENANCE_KEY: stamp(),
+            "clocks_requested": clock_list,
+            "results": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="biolearn",
+    version="0.5.0",
+    modes=(Mode.METHYLATION,),
+    consumes=(Artifact.METHYLATION_MATRIX,),
+    criticality=Criticality.CRITICAL,
+    timeout_s=1800,
+)
+register(SPEC, compute_clocks)

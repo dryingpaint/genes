@@ -19,8 +19,8 @@ from genes.infra.volumes import (
     vol_popgen,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 PGS_CATALOG_DIR = f"{MOUNT_POPGEN}/pgs_catalog"
 
@@ -78,8 +78,8 @@ def _parse_plink_score(sscore_path: Path) -> list[dict]:
 def calculate(
     vcf_path: str,
     run_id: str,
-    traits: list[str],
     *,
+    prs_traits: list[str] | None = None,
     columns: str = "1,2,4",
     score_col_nums: str | None = None,
 ) -> ToolResult:
@@ -105,6 +105,7 @@ def calculate(
     errors: list[str] = []
     trait_results: dict[str, list[dict]] = {}
     output_paths: list[str] = []
+    traits = prs_traits or []
 
     with ToolTimer() as timer:
         for trait_id in traits:
@@ -163,23 +164,30 @@ def calculate(
             except Exception as e:
                 errors.append(f"[{trait_id}] {e}")
 
-    return ToolResult(
-        tool_name="prs",
-        version="plink2-alpha5",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "vcf_path": vcf_path,
-            "run_id": run_id,
-            "traits": traits,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={
+            "traits_requested": traits,
             "n_traits_requested": len(traits),
-            PROVENANCE_KEY: stamp("pgs_catalog"),
-        },
-        output_paths=output_paths,
-        output_summary={
             "n_traits_computed": len(trait_results),
             "trait_scores": trait_results,
+            "files": output_paths,
         },
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="prs",
+    version="plink2-alpha5",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.OPTIONAL,
+    timeout_s=900,
+    reference_artifacts=("pgs_catalog",),
+    request_kwargs=("prs_traits",),
+    gate=lambda req: bool(getattr(req, "prs_traits", None)),
+)
+register(SPEC, calculate)

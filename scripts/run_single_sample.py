@@ -106,7 +106,75 @@ def run_germline_analysis(
     )
 
     result = run_pipeline(request)
-    return result.model_dump(mode="json")
+    result_dict = result.model_dump(mode="json")
+
+    # Save results to volume for detached mode retrieval
+    import os
+    results_dir = f"{MOUNT_WORKDIR}/{run_id}"
+    os.makedirs(results_dir, exist_ok=True)
+    results_path = f"{results_dir}/results.json"
+    with open(results_path, "w") as f:
+        json.dump(result_dict, f, indent=2, default=str)
+    vol_workdir.commit()
+
+    return result_dict
+
+
+@app.function(
+    image=image_python_bio,
+    volumes={MOUNT_WORKDIR: vol_workdir},
+    timeout=14400,
+)
+@modal.fastapi_endpoint(method="POST")
+def run_pipeline_endpoint(item: dict):
+    """Trigger pipeline via HTTP POST. Runs entirely on Modal — no local heartbeat needed.
+
+    Usage:
+        # Upload VCF first, then trigger:
+        curl -X POST https://<app-url>/run_pipeline_endpoint \\
+            -H "Content-Type: application/json" \\
+            -d '{"vcf_path": "/work/<run_id>/input/file.vcf.gz", "run_id": "run_xxx"}'
+
+        # Or trigger with a VCF already on the volume from a previous run:
+        modal run scripts/run_single_sample.py --vcf test_data/HG002_full.vcf.gz --detach
+    """
+    from genes.orchestrator.dispatcher import run_pipeline
+    from genes.orchestrator.models import AnalysisRequest, InputType
+
+    vcf_path = item.get("vcf_path")
+    run_id = item.get("run_id")
+    hpo_terms = item.get("hpo_terms")
+    prs_traits = item.get("prs_traits")
+
+    if not vcf_path or not run_id:
+        return {"error": "vcf_path and run_id required"}
+
+    request = AnalysisRequest(
+        run_id=run_id,
+        input_type=InputType.GERMLINE_VCF,
+        input_paths=[vcf_path],
+        hpo_terms=hpo_terms,
+        prs_traits=prs_traits,
+    )
+
+    result = run_pipeline(request)
+    result_dict = result.model_dump(mode="json")
+
+    # Save results to volume
+    import json
+    output_path = f"{MOUNT_WORKDIR}/{run_id}/results.json"
+    with open(output_path, "w") as f:
+        json.dump(result_dict, f, indent=2, default=str)
+    vol_workdir.commit()
+
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "tools_succeeded": result_dict.get("summary", {}).get("tools_succeeded", []),
+        "tools_failed": result_dict.get("summary", {}).get("tools_failed", []),
+        "runtime_seconds": result_dict.get("summary", {}).get("total_runtime_seconds"),
+        "results_path": output_path,
+    }
 
 
 @app.local_entrypoint()
@@ -115,8 +183,13 @@ def main(
     hpo: str = "",
     prs_traits: str = "",
     output: str = "",
+    detach: bool = False,
 ):
-    """Entry point: modal run scripts/run_single_sample.py --vcf path/to/file.vcf.gz"""
+    """Entry point: modal run scripts/run_single_sample.py --vcf path/to/file.vcf.gz
+
+    With --detach, uploads VCF then triggers the pipeline as a spawned remote function.
+    Your laptop can disconnect — the pipeline runs entirely on Modal.
+    """
     vcf_path = Path(vcf)
     if not vcf_path.exists():
         print(f"Error: VCF not found: {vcf_path}")
@@ -149,7 +222,23 @@ def main(
     print(f"Uploaded to: {remote_path}")
     print()
 
-    # Step 2: Run the pipeline
+    if detach:
+        # Fire-and-forget: spawn the pipeline on Modal and exit.
+        # The pipeline runs entirely server-side — laptop can disconnect.
+        handle = run_germline_analysis.spawn(
+            remote_path, run_id, hpo_terms, trait_list
+        )
+        print("Pipeline spawned in detached mode!")
+        print(f"  Run ID:    {run_id}")
+        print(f"  Function:  run_germline_analysis")
+        print(f"  Results:   Will be saved to /work/{run_id}/results.json on the volume")
+        print()
+        print("Your laptop can disconnect. To check results later:")
+        print(f"  modal volume get genes-workdir {run_id}/results.json")
+        print(f"  # or download: modal volume get genes-workdir {run_id}/ ./results/")
+        return
+
+    # Step 2: Run the pipeline (attached — requires stable connection)
     print("Running germline VCF pipeline...")
     print("  VEP annotation → [AlphaMissense, SpliceAI, GPN-MSA, PharmCAT, PRS, Ancestry] parallel")
     if hpo_terms:
@@ -166,23 +255,19 @@ def main(
     print("=" * 70)
     print()
 
-    summary = result_dict.get("summary", {})
-    tools_succeeded = summary.get("tools_succeeded", [])
-    tools_failed = summary.get("tools_failed", [])
-    runtime = summary.get("total_runtime_seconds")
+    tool_results = result_dict.get("tool_results", {})
+    by_status: dict[str, list[str]] = {}
+    for name, tr in tool_results.items():
+        by_status.setdefault(tr.get("status", "unknown"), []).append(name)
 
-    print(f"Tools run:       {len(tools_succeeded) + len(tools_failed)}")
-    print(f"Tools succeeded: {len(tools_succeeded)} — {', '.join(tools_succeeded)}")
-    if tools_failed:
-        print(f"Tools failed:    {len(tools_failed)} — {', '.join(tools_failed)}")
-    if runtime:
-        print(f"Total runtime:   {runtime:.1f}s")
+    print(f"Pipeline status: {result_dict.get('status') or 'unknown'}")
+    for status in ("ok", "partial", "failed", "timeout", "skipped"):
+        if by_status.get(status):
+            print(f"  {status:>8}: {', '.join(by_status[status])}")
     print()
 
-    # Print per-tool summaries
-    tool_results = result_dict.get("tool_results", {})
     for tool_name, tr in tool_results.items():
-        status = "OK" if not tr.get("errors") else "FAILED"
+        status = (tr.get("status") or "unknown").upper()
         runtime_s = ""
         if tr.get("started_at") and tr.get("completed_at"):
             from datetime import datetime as dt
@@ -195,31 +280,29 @@ def main(
 
         print(f"  [{status}] {tool_name} v{tr.get('version', '?')}{runtime_s}")
 
-        out_summary = tr.get("output_summary", {})
-        if out_summary:
-            for k, v in list(out_summary.items())[:5]:
-                if isinstance(v, dict):
-                    print(f"         {k}:")
-                    for k2, v2 in list(v.items())[:3]:
-                        print(f"           {k2}: {v2}")
-                elif isinstance(v, list):
-                    print(f"         {k}: {len(v)} items")
-                else:
-                    print(f"         {k}: {v}")
+        for art, path in (tr.get("output_paths") or {}).items():
+            print(f"         produced {art}: {path}")
 
-        if tr.get("errors"):
-            for err in tr["errors"]:
-                print(f"         ERROR: {err}")
+        payload = tr.get("payload", {})
+        for k, v in list(payload.items())[:5]:
+            if isinstance(v, dict):
+                print(f"         {k}:")
+                for k2, v2 in list(v.items())[:3]:
+                    print(f"           {k2}: {v2}")
+            elif isinstance(v, list):
+                print(f"         {k}: {len(v)} items")
+            else:
+                print(f"         {k}: {v}")
 
-        if tr.get("warnings"):
-            for w in tr["warnings"][:3]:
-                print(f"         WARN: {w}")
+        for err in tr.get("errors", []) or []:
+            print(f"         ERROR: {err}")
+        for w in (tr.get("warnings", []) or [])[:3]:
+            print(f"         WARN: {w}")
         print()
 
-    # Pipeline-level errors
-    if result_dict.get("errors"):
+    if result_dict.get("pipeline_errors"):
         print("PIPELINE ERRORS:")
-        for err in result_dict["errors"]:
+        for err in result_dict["pipeline_errors"]:
             print(f"  - {err}")
         print()
 

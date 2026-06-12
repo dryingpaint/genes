@@ -18,8 +18,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir
 
 _REFERENCE_GENOME = "GRCh38"
 
@@ -36,9 +36,11 @@ _REFERENCE_GENOME = "GRCh38"
 def analyze_signatures(
     vcf_path: str,
     run_id: str,
+    *,
     sample_name: str = "sample",
     genome: str = "GRCh38",
     context_types: list[str] | None = None,
+    tumor_type: str | None = None,
 ) -> ToolResult:
     """Analyze mutational signatures from a somatic VCF.
 
@@ -159,20 +161,29 @@ def analyze_signatures(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="sigprofiler",
-        version="1.2",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "vcf_path": vcf_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={
             "sample_name": sample_name,
             "genome": genome,
-            PROVENANCE_KEY: stamp("reference_genome"),
+            "tumor_type": tumor_type,
+            "signatures": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="sigprofiler",
+    version="1.2",
+    modes=(Mode.SOMATIC,),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=3600,
+    reference_artifacts=("reference_genome",),
+    request_kwargs=("tumor_type",),
+)
+register(SPEC, analyze_signatures)

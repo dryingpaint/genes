@@ -20,8 +20,8 @@ from genes.infra.volumes import (
     vol_precomputed,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, VariantScore, ensure_dir
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, VariantScore, build_result, ensure_dir
 
 # AlphaMissense pre-computed TSV (tabix-indexed)
 # Columns: #CHROM  POS  REF  ALT  genome  uniprot_id  transcript_id
@@ -110,9 +110,9 @@ def _variants_from_vcf(vcf_path: str) -> list[tuple[str, int, str, str]]:
     memory=8192,
 )
 def alphamissense_lookup(
+    vcf_path: str,
     run_id: str,
     *,
-    vcf_path: str | None = None,
     variants: list[tuple[str, int, str, str]] | None = None,
 ) -> ToolResult:
     """Look up AlphaMissense pathogenicity scores.
@@ -175,26 +175,16 @@ def alphamissense_lookup(
         if v.classifications.get("am_class") != "not_found"
     )
 
-    return ToolResult(
-        tool_name="alphamissense",
-        version="1.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "run_id": run_id,
-            "vcf_path": vcf_path,
-            "n_variants_queried": len(scored),
-            PROVENANCE_KEY: stamp("alphamissense_scores"),
-        },
-        output_paths=[str(output_tsv)] if output_tsv.exists() else [],
-        output_summary={
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={
             "n_variants_queried": len(scored),
             "n_scores_found": n_found,
-            # Only include variants with actual scores (not the full queried set)
             "scored_variants": [
                 v.model_dump() for v in scored
                 if v.scores.get("am_pathogenicity") is not None
-            ][:1000],  # Cap to avoid bloating JSON
+            ][:1000],
             "pathogenic_count": sum(
                 1 for v in scored
                 if v.classifications.get("am_class") == "likely_pathogenic"
@@ -203,7 +193,20 @@ def alphamissense_lookup(
                 1 for v in scored
                 if v.classifications.get("am_class") == "likely_benign"
             ),
+            "output_tsv": str(output_tsv) if output_tsv.exists() else None,
         },
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="alphamissense",
+    version="1.0",
+    modes=(Mode.GERMLINE, Mode.SOMATIC),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=1800,
+    reference_artifacts=("alphamissense_scores",),
+)
+register(SPEC, alphamissense_lookup)

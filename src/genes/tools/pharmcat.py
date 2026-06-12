@@ -19,8 +19,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 PHARMCAT_JAR = "/opt/pharmcat.jar"
 
@@ -214,19 +214,22 @@ def run(
     elif not errors:
         warnings.append("No PharmCAT report generated; check input VCF coverage.")
 
-    return ToolResult(
-        tool_name="pharmcat",
-        version="2.13.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "vcf_path": vcf_path,
-            "run_id": run_id,
-            "sample_id": sample_id,
-            PROVENANCE_KEY: stamp("reference_genome"),
-        },
-        output_paths=output_paths,
-        output_summary=output_summary,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={"sample_id": sample_id, "report": output_summary, "files": output_paths},
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="pharmcat",
+    version="2.13.0",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=900,
+    reference_artifacts=("reference_genome",),
+)
+register(SPEC, run)

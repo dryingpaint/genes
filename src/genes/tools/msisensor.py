@@ -16,8 +16,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
 _MS_SITES_LIST = f"{MOUNT_REFERENCE}/GRCh38/microsatellites.list"
@@ -35,6 +35,7 @@ _MS_SITES_LIST = f"{MOUNT_REFERENCE}/GRCh38/microsatellites.list"
 def detect_msi(
     tumor_bam: str,
     run_id: str,
+    *,
     normal_bam: str | None = None,
     min_coverage: int = 20,
     threads: int = 8,
@@ -144,21 +145,30 @@ def detect_msi(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="msisensor_pro",
-        version="1.2.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "tumor_bam": tumor_bam,
-            "normal_bam": normal_bam,
-            "run_id": run_id,
+    inputs = {Artifact.TUMOR_BAM.value: tumor_bam}
+    if normal_bam:
+        inputs[Artifact.NORMAL_BAM.value] = normal_bam
+    return build_result(
+        SPEC, timer,
+        inputs=inputs,
+        payload={
             "min_coverage": min_coverage,
-            "mode": "paired" if normal_bam else "tumor_only",
-            PROVENANCE_KEY: stamp("reference_genome"),
+            "results": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="msisensor",
+    version="1.2.0",
+    modes=(Mode.SOMATIC,),
+    consumes=(Artifact.TUMOR_BAM,),
+    optional_consumes=(Artifact.NORMAL_BAM,),
+    criticality=Criticality.STANDARD,
+    timeout_s=3600,
+    reference_artifacts=("reference_genome",),
+)
+register(SPEC, detect_msi)

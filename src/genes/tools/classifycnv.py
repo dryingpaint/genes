@@ -16,8 +16,8 @@ from genes.infra.volumes import (
     vol_clinical,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _CLASSIFYCNV_BIN = "/opt/ClassifyCNV/ClassifyCNV.py"
 _CLINVAR_CNV = f"{MOUNT_CLINICAL}/clinvar/clinvar_cnv.tsv"
@@ -132,19 +132,26 @@ def classify_cnv(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="classifycnv",
-        version="1.1.1",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "cnv_input_path": cnv_input_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: cnv_input_path},
+        payload={
             "genome_build": genome_build,
-            PROVENANCE_KEY: stamp("reference_genome", "clinvar"),
+            "results": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="classifycnv",
+    version="1.1.1",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.OPTIONAL,
+    timeout_s=1800,
+    reference_artifacts=("reference_genome", "clinvar"),
+)
+register(SPEC, classify_cnv)

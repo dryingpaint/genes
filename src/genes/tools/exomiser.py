@@ -21,8 +21,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _EXOMISER_JAR = "/opt/exomiser-cli-14.0.0/exomiser-cli-14.0.0.jar"
 _EXOMISER_DATA = f"{MOUNT_EXOMISER}/2402_hg38"
@@ -102,8 +102,9 @@ def _build_analysis_yaml(
 )
 def prioritize_variants(
     vcf_path: str,
-    hpo_terms: list[str],
     run_id: str,
+    *,
+    hpo_terms: list[str] | None = None,
     inheritance_modes: list[str] | None = None,
     frequency_threshold: float = 0.01,
 ) -> ToolResult:
@@ -192,21 +193,30 @@ def prioritize_variants(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="exomiser",
-        version="14.0.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "vcf_path": vcf_path,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={
             "hpo_terms": hpo_terms,
-            "run_id": run_id,
             "inheritance_modes": inheritance_modes or ["AD", "AR", "XD", "XR"],
             "frequency_threshold": frequency_threshold,
-            PROVENANCE_KEY: stamp("exomiser_data", "reference_genome"),
+            "results": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="exomiser",
+    version="14.0.0",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=3600,
+    reference_artifacts=("exomiser_data", "reference_genome"),
+    request_kwargs=("hpo_terms",),
+    gate=lambda req: bool(getattr(req, "hpo_terms", None)),
+)
+register(SPEC, prioritize_variants)

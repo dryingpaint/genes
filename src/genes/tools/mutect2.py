@@ -19,8 +19,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _GATK = "/opt/gatk-4.5.0.0/gatk"
 _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
@@ -42,6 +42,7 @@ _PON = f"{MOUNT_POPGEN}/gatk/1000g_pon.hg38.vcf.gz"
 def call_somatic_variants(
     tumor_bam: str,
     run_id: str,
+    *,
     normal_bam: str | None = None,
     intervals: str | None = None,
     tumor_sample: str = "TUMOR",
@@ -211,21 +212,33 @@ def call_somatic_variants(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="mutect2",
-        version="4.5.0.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "tumor_bam": tumor_bam,
-            "normal_bam": normal_bam,
-            "run_id": run_id,
+    vcf_out = filtered_vcf if Path(filtered_vcf).exists() else None
+    inputs = {Artifact.TUMOR_BAM.value: tumor_bam}
+    if normal_bam:
+        inputs[Artifact.NORMAL_BAM.value] = normal_bam
+    return build_result(
+        SPEC, timer,
+        inputs=inputs,
+        output_paths={Artifact.VCF.value: vcf_out} if vcf_out else {},
+        payload={
             "intervals": intervals,
-            "mode": "tumor_normal" if normal_bam else "tumor_only",
-            PROVENANCE_KEY: stamp("reference_genome"),
+            "stats": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="mutect2",
+    version="4.5.0.0",
+    modes=(Mode.SOMATIC,),
+    consumes=(Artifact.TUMOR_BAM,),
+    optional_consumes=(Artifact.NORMAL_BAM,),
+    produces=(Artifact.VCF,),
+    criticality=Criticality.CRITICAL,
+    timeout_s=14400,
+    reference_artifacts=("reference_genome",),
+)
+register(SPEC, call_somatic_variants)

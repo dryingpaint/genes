@@ -20,8 +20,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _VALID_MODEL_TYPES = {"WGS", "WES", "PACBIO", "ONT_R104"}
 _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
@@ -40,6 +40,7 @@ _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_ana
 def call_variants(
     bam_path: str,
     run_id: str,
+    *,
     model_type: str = "WGS",
     regions_bed: str | None = None,
     num_shards: int = 1,
@@ -115,20 +116,30 @@ def call_variants(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="deepvariant",
-        version="1.6.1",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "bam_path": bam_path,
-            "run_id": run_id,
+    vcf_out = output_vcf if Path(output_vcf).exists() else None
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.BAM.value: bam_path},
+        output_paths={Artifact.VCF.value: vcf_out} if vcf_out else {},
+        payload={
             "model_type": model_type,
             "regions_bed": regions_bed,
-            PROVENANCE_KEY: stamp("reference_genome", "deepvariant_model"),
+            "stats": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="deepvariant",
+    version="1.6.1",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.BAM,),
+    produces=(Artifact.VCF,),
+    criticality=Criticality.CRITICAL,
+    timeout_s=7200,
+    reference_artifacts=("reference_genome", "deepvariant_model"),
+)
+register(SPEC, call_variants)

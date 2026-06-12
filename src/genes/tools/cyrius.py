@@ -18,8 +18,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
 
@@ -35,6 +35,7 @@ _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_ana
 def call_cyp2d6(
     bam_path: str,
     run_id: str,
+    *,
     genome_build: str = "38",
 ) -> ToolResult:
     """Call CYP2D6 diplotypes from a WGS BAM file.
@@ -100,19 +101,22 @@ def call_cyp2d6(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="cyrius",
-        version="1.1",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "bam_path": bam_path,
-            "run_id": run_id,
-            "genome_build": genome_build,
-            PROVENANCE_KEY: stamp("reference_genome"),
-        },
-        output_paths=output_paths,
-        output_summary=summary,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.BAM.value: bam_path},
+        payload={"genome_build": genome_build, "results": summary, "files": output_paths},
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="cyrius",
+    version="1.1",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.BAM,),
+    criticality=Criticality.STANDARD,
+    timeout_s=900,
+    reference_artifacts=("reference_genome",),
+)
+register(SPEC, call_cyp2d6)

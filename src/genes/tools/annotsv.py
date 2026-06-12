@@ -17,8 +17,8 @@ from genes.infra.volumes import (
     vol_clinical,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 _ANNOTSV_BIN = "/opt/AnnotSV-3.4.2/bin/AnnotSV"
 _ANNOTSV_ANNOTATIONS = f"{MOUNT_CLINICAL}/annotsv/annotations"
@@ -139,21 +139,28 @@ def annotate_sv(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="annotsv",
-        version="3.4.2",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "sv_input_path": sv_input_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: sv_input_path},
+        payload={
             "genome_build": genome_build,
             "sv_min_size": sv_min_size,
             "annotation_mode": annotation_mode,
-            PROVENANCE_KEY: stamp("reference_genome", "clinvar"),
+            "results": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="annotsv",
+    version="3.4.2",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.OPTIONAL,
+    timeout_s=3600,
+    reference_artifacts=("reference_genome", "clinvar"),
+)
+register(SPEC, annotate_sv)

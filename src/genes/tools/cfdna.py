@@ -21,8 +21,8 @@ from genes.infra.volumes import (
     vol_reference,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 # ----- Paths within volumes -----
 _REFERENCE_FASTA = f"{MOUNT_REFERENCE}/GRCh38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
@@ -133,19 +133,10 @@ def run_ichorcna(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="ichorcna",
-        version="0.5.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "bam_path": bam_path,
-            "run_id": run_id,
-            "bin_size": bin_size,
-            PROVENANCE_KEY: stamp("cfdna_refs", "reference_genome"),
-        },
-        output_paths=output_paths,
-        output_summary=summary,
+    return build_result(
+        SPEC_ICHORCNA, timer,
+        inputs={Artifact.CFDNA_BAM.value: bam_path},
+        payload={"bin_size": bin_size, "results": summary, "files": output_paths},
         errors=errors,
         warnings=warnings,
     )
@@ -230,20 +221,15 @@ def run_griffin(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="griffin",
-        version="1.0.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "bam_path": bam_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC_GRIFFIN, timer,
+        inputs={Artifact.CFDNA_BAM.value: bam_path},
+        payload={
             "tfbs_list": sites_bed,
             "window_size": window_size,
-            PROVENANCE_KEY: stamp("cfdna_refs", "reference_genome"),
+            "results": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
@@ -342,19 +328,44 @@ def run_uxm(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="uxm",
-        version="1.0.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "bam_path": bam_path,
-            "run_id": run_id,
-            "atlas_dir": atlas,
-            PROVENANCE_KEY: stamp("cfdna_refs"),
-        },
-        output_paths=output_paths,
-        output_summary=summary,
+    return build_result(
+        SPEC_UXM, timer,
+        inputs={Artifact.CFDNA_BISULFITE_BAM.value: bam_path},
+        payload={"atlas_dir": atlas, "results": summary, "files": output_paths},
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC_ICHORCNA = ToolSpec(
+    name="ichorcna",
+    version="0.5.0",
+    modes=(Mode.CFDNA,),
+    consumes=(Artifact.CFDNA_BAM,),
+    criticality=Criticality.STANDARD,
+    timeout_s=3600,
+    reference_artifacts=("cfdna_refs", "reference_genome"),
+)
+register(SPEC_ICHORCNA, run_ichorcna)
+
+SPEC_GRIFFIN = ToolSpec(
+    name="griffin",
+    version="1.0.0",
+    modes=(Mode.CFDNA,),
+    consumes=(Artifact.CFDNA_BAM,),
+    criticality=Criticality.STANDARD,
+    timeout_s=3600,
+    reference_artifacts=("cfdna_refs", "reference_genome"),
+)
+register(SPEC_GRIFFIN, run_griffin)
+
+SPEC_UXM = ToolSpec(
+    name="uxm",
+    version="1.0.0",
+    modes=(Mode.CFDNA,),
+    consumes=(Artifact.CFDNA_BISULFITE_BAM,),
+    criticality=Criticality.OPTIONAL,
+    timeout_s=1800,
+    reference_artifacts=("cfdna_refs",),
+)
+register(SPEC_UXM, run_uxm)

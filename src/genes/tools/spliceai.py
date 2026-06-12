@@ -22,8 +22,8 @@ from genes.infra.volumes import (
     vol_precomputed,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, VariantScore, ensure_dir
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, VariantScore, build_result, ensure_dir
 
 # Pre-computed SpliceAI scores (tabix-indexed VCF)
 SPLICEAI_VCF = f"{MOUNT_PRECOMPUTED}/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
@@ -228,28 +228,31 @@ def spliceai_lookup(
         if v.classifications.get("spliceai_impact") == "high"
     )
 
-    return ToolResult(
-        tool_name="spliceai",
-        version="1.3.1",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "vcf_path": vcf_path,
-            "run_id": run_id,
-            "n_variants_queried": len(all_results),
-            PROVENANCE_KEY: stamp("spliceai_scores"),
-        },
-        output_paths=[str(output_tsv)] if output_tsv.exists() else [],
-        output_summary={
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={
             "n_variants_queried": len(all_results),
             "n_scores_found": n_found,
             "n_high_impact": n_high,
-            # Only include variants with scores found (not the full 4M)
             "high_impact_variants": [
                 v.model_dump() for v in all_results
                 if v.classifications.get("spliceai_impact") in ("high", "moderate")
-            ][:1000],  # Cap at 1000 to avoid bloating JSON
+            ][:1000],
+            "output_tsv": str(output_tsv) if output_tsv.exists() else None,
         },
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="spliceai",
+    version="1.3.1",
+    modes=(Mode.GERMLINE, Mode.SOMATIC),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=1800,
+    reference_artifacts=("spliceai_scores",),
+)
+register(SPEC, spliceai_lookup)

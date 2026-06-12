@@ -1,7 +1,10 @@
 """OncoKB + CIViC — Somatic variant actionability lookup.
 
-Queries the OncoKB REST API and CIViC GraphQL API to annotate somatic
-variants with clinical actionability, drug sensitivity, and evidence levels.
+Consumes a VEP-annotated VCF, extracts (gene, protein_change) pairs from
+the CSQ field, then queries OncoKB and CIViC for each unique alteration.
+
+OncoKB requires an API key configured as Modal secret "oncokb-api-key";
+CIViC is open.
 """
 
 from __future__ import annotations
@@ -18,37 +21,25 @@ import modal
 
 from genes.app import app
 from genes.infra.images import image_python_bio
-from genes.infra.volumes import (
-    MOUNT_WORKDIR,
-    vol_workdir,
-)
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir
+from genes.infra.volumes import MOUNT_WORKDIR, vol_workdir
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir
 
 _ONCOKB_BASE = "https://www.oncokb.org/api/v1"
 _CIVIC_GRAPHQL = "https://civicdb.org/api/graphql"
 
 
 def _oncokb_annotate_variant(
-    gene: str,
-    protein_change: str,
-    tumor_type: str | None,
-    api_key: str,
+    gene: str, protein_change: str, tumor_type: str | None, api_key: str,
 ) -> dict[str, Any]:
-    """Query OncoKB for a single variant annotation."""
-    params: dict[str, str] = {
-        "hugoSymbol": gene,
-        "alteration": protein_change,
-    }
+    params: dict[str, str] = {"hugoSymbol": gene, "alteration": protein_change}
     if tumor_type:
         params["tumorType"] = tumor_type
-
     url = f"{_ONCOKB_BASE}/annotate/mutations/byProteinChange?{urlencode(params)}"
     req = Request(url, headers={
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
     })
-
     try:
         with urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode())
@@ -67,40 +58,24 @@ def _oncokb_annotate_variant(
                 }
                 for t in data.get("treatments", [])
             ],
-            "source": "oncokb",
         }
     except HTTPError as exc:
-        return {"error": f"OncoKB HTTP {exc.code}: {exc.reason}", "source": "oncokb"}
+        return {"error": f"OncoKB HTTP {exc.code}: {exc.reason}"}
     except Exception as exc:
-        return {"error": str(exc), "source": "oncokb"}
+        return {"error": str(exc)}
 
 
 def _civic_query_variant(gene: str, variant_name: str) -> dict[str, Any]:
-    """Query CIViC GraphQL API for variant evidence."""
     query = """
     query($gene: String!, $variantName: String!) {
         variants(name: $variantName, geneName: $gene, first: 5) {
             nodes {
-                id
-                name
-                gene { name }
-                molecularProfiles {
-                    nodes {
-                        evidenceItems {
-                            nodes {
-                                id
-                                status
-                                evidenceType
-                                evidenceLevel
-                                evidenceDirection
-                                significance
-                                therapies { name }
-                                disease { name }
-                                source { citation }
-                            }
-                        }
-                    }
-                }
+                id name gene { name }
+                molecularProfiles { nodes { evidenceItems { nodes {
+                    id status evidenceType evidenceLevel evidenceDirection
+                    significance therapies { name } disease { name }
+                    source { citation }
+                } } } }
             }
         }
     }
@@ -109,21 +84,16 @@ def _civic_query_variant(gene: str, variant_name: str) -> dict[str, Any]:
         "query": query,
         "variables": {"gene": gene, "variantName": variant_name},
     }).encode()
-
     req = Request(
-        _CIVIC_GRAPHQL,
-        data=payload,
+        _CIVIC_GRAPHQL, data=payload,
         headers={"Content-Type": "application/json", "Accept": "application/json"},
     )
-
     try:
         with urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode())
-
         variants = data.get("data", {}).get("variants", {}).get("nodes", [])
         if not variants:
-            return {"evidence_items": [], "source": "civic", "status": "not_found"}
-
+            return {"evidence_items": [], "status": "not_found"}
         evidence_items: list[dict] = []
         for variant in variants:
             for mp in variant.get("molecularProfiles", {}).get("nodes", []):
@@ -139,40 +109,79 @@ def _civic_query_variant(gene: str, variant_name: str) -> dict[str, Any]:
                         "disease": ei.get("disease", {}).get("name"),
                         "citation": ei.get("source", {}).get("citation"),
                     })
-
         return {
             "evidence_items": evidence_items,
-            "source": "civic",
             "status": "found" if evidence_items else "no_accepted_evidence",
         }
     except Exception as exc:
-        return {"error": str(exc), "source": "civic"}
+        return {"error": str(exc)}
+
+
+def _extract_variants_from_vep_vcf(vcf_path: str) -> list[dict]:
+    """Pull (gene, protein_change) pairs from a VEP-annotated VCF's CSQ field."""
+    import gzip
+
+    opener = gzip.open if vcf_path.endswith(".gz") else open
+    csq_fields: list[str] | None = None
+    out: dict[tuple[str, str], dict] = {}
+
+    with opener(vcf_path, "rt") as fh:
+        for line in fh:
+            if line.startswith("##INFO=<ID=CSQ"):
+                # Format: ##INFO=<ID=CSQ,...,Description="...Format: <fields>">
+                if 'Format:' in line:
+                    fmt = line.split('Format:', 1)[1].rsplit('"', 1)[0].strip()
+                    csq_fields = fmt.split("|")
+                continue
+            if line.startswith("#") or not csq_fields:
+                continue
+            cols = line.rstrip().split("\t")
+            if len(cols) < 8:
+                continue
+            info = cols[7]
+            csq_blob = next(
+                (kv[4:] for kv in info.split(";") if kv.startswith("CSQ=")),
+                None,
+            )
+            if not csq_blob:
+                continue
+            sym_idx = csq_fields.index("SYMBOL") if "SYMBOL" in csq_fields else None
+            amino_idx = csq_fields.index("Amino_acids") if "Amino_acids" in csq_fields else None
+            prot_idx = csq_fields.index("Protein_position") if "Protein_position" in csq_fields else None
+            if sym_idx is None or amino_idx is None or prot_idx is None:
+                continue
+            for csq in csq_blob.split(","):
+                parts = csq.split("|")
+                if len(parts) <= max(sym_idx, amino_idx, prot_idx):
+                    continue
+                gene = parts[sym_idx]
+                aa = parts[amino_idx]
+                ppos = parts[prot_idx]
+                if not gene or "/" not in aa or not ppos:
+                    continue
+                ref_aa, alt_aa = aa.split("/", 1)
+                # Use the start of the protein-position range for substitutions.
+                start = ppos.split("-", 1)[0]
+                change = f"{ref_aa}{start}{alt_aa}"
+                key = (gene, change)
+                if key not in out:
+                    out[key] = {"gene": gene, "protein_change": change}
+    return list(out.values())
 
 
 @app.function(
     image=image_python_bio,
     secrets=[modal.Secret.from_name("oncokb-api-key")],
-    volumes={
-        MOUNT_WORKDIR: vol_workdir,
-    },
-    timeout=600,
+    volumes={MOUNT_WORKDIR: vol_workdir},
+    timeout=1800,
 )
 def lookup_actionability(
-    variants: list[dict],
+    annotated_vcf: str,
     run_id: str,
+    *,
     tumor_type: str | None = None,
 ) -> ToolResult:
-    """Look up clinical actionability for somatic variants.
-
-    Args:
-        variants: List of dicts with keys: gene, protein_change.
-            protein_change should be HGVS-like (e.g. "V600E", "p.V600E").
-        run_id: Unique identifier for this run.
-        tumor_type: OncoKB tumor type (e.g. "Melanoma", "NSCLC"). Optional.
-
-    Returns:
-        ToolResult with OncoKB and CIViC annotations per variant.
-    """
+    """Look up actionability for protein-changing variants in a VEP-annotated VCF."""
     outdir = ensure_dir(f"{MOUNT_WORKDIR}/{run_id}/oncokb_civic")
     oncokb_api_key = os.environ.get("ONCOKB_API_KEY", "")
 
@@ -182,92 +191,78 @@ def lookup_actionability(
         results: list[dict] = []
 
         if not oncokb_api_key:
-            warnings.append(
-                "ONCOKB_API_KEY not set; OncoKB lookups will be skipped."
-            )
+            warnings.append("ONCOKB_API_KEY not set; OncoKB lookups will be skipped.")
+
+        try:
+            variants = _extract_variants_from_vep_vcf(annotated_vcf)
+        except Exception as exc:
+            errors.append(f"Failed to parse VEP-annotated VCF: {exc}")
+            variants = []
 
         for v in variants:
-            gene = v.get("gene", "")
-            protein_change = v.get("protein_change", "")
+            gene = v["gene"]
+            change = v["protein_change"]
+            entry: dict[str, Any] = {"gene": gene, "protein_change": change}
 
-            if not gene or not protein_change:
-                warnings.append(f"Skipping variant with missing gene/protein_change: {v}")
-                continue
-
-            # Clean protein_change (remove "p." prefix for OncoKB)
-            clean_change = protein_change.lstrip("p.")
-            variant_result: dict[str, Any] = {
-                "gene": gene,
-                "protein_change": protein_change,
-            }
-
-            # OncoKB lookup
             if oncokb_api_key:
-                oncokb = _oncokb_annotate_variant(
-                    gene=gene,
-                    protein_change=clean_change,
-                    tumor_type=tumor_type,
-                    api_key=oncokb_api_key,
+                entry["oncokb"] = _oncokb_annotate_variant(
+                    gene=gene, protein_change=change,
+                    tumor_type=tumor_type, api_key=oncokb_api_key,
                 )
-                variant_result["oncokb"] = oncokb
             else:
-                variant_result["oncokb"] = {"skipped": True}
+                entry["oncokb"] = {"skipped": True}
 
-            # CIViC lookup
-            civic = _civic_query_variant(gene=gene, variant_name=clean_change)
-            variant_result["civic"] = civic
+            entry["civic"] = _civic_query_variant(gene=gene, variant_name=change)
 
-            # Consolidated actionability level
-            oncokb_level = variant_result.get("oncokb", {}).get("highest_sensitive_level", "")
-            civic_evidence = variant_result.get("civic", {}).get("evidence_items", [])
-            civic_levels = [e.get("evidence_level") for e in civic_evidence if e.get("evidence_level")]
-
-            variant_result["actionability_summary"] = {
-                "oncokb_level": oncokb_level or None,
+            oncokb_level = entry["oncokb"].get("highest_sensitive_level", "") or None
+            civic_levels = [
+                ei.get("evidence_level")
+                for ei in entry["civic"].get("evidence_items", [])
+                if ei.get("evidence_level")
+            ]
+            entry["actionability"] = {
+                "oncokb_level": oncokb_level,
                 "civic_best_level": min(civic_levels) if civic_levels else None,
                 "has_therapeutic_evidence": bool(oncokb_level) or any(
-                    e.get("evidence_type") == "PREDICTIVE" for e in civic_evidence
+                    ei.get("evidence_type") == "PREDICTIVE"
+                    for ei in entry["civic"].get("evidence_items", [])
                 ),
             }
+            results.append(entry)
 
-            results.append(variant_result)
-
-        # Write output
         output_json = str(outdir / "actionability_results.json")
         with open(output_json, "w") as fh:
             json.dump(results, fh, indent=2)
-
-        output_paths = [output_json]
-
-        # Build summary
-        summary = {
-            "total_queried": len(results),
-            "with_therapeutic_evidence": sum(
-                1 for r in results
-                if r.get("actionability_summary", {}).get("has_therapeutic_evidence")
-            ),
-            "oncokb_oncogenic": sum(
-                1 for r in results
-                if r.get("oncokb", {}).get("oncogenic") in ("Oncogenic", "Likely Oncogenic")
-            ),
-            "results": results,
-        }
-
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="oncokb_civic",
-        version="1.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "num_variants": len(variants),
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.ANNOTATED_VCF.value: annotated_vcf},
+        payload={
             "tumor_type": tumor_type,
-            "run_id": run_id,
-            PROVENANCE_KEY: stamp(),
+            "n_queried": len(results),
+            "n_with_therapeutic_evidence": sum(
+                1 for r in results if r["actionability"]["has_therapeutic_evidence"]
+            ),
+            "n_oncogenic": sum(
+                1 for r in results
+                if r["oncokb"].get("oncogenic") in ("Oncogenic", "Likely Oncogenic")
+            ),
+            "results": results[:200],
+            "output_json": output_json,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="oncokb_civic",
+    version="1.0",
+    modes=(Mode.SOMATIC,),
+    consumes=(Artifact.ANNOTATED_VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=1800,
+    request_kwargs=("tumor_type",),
+)
+register(SPEC, lookup_actionability)

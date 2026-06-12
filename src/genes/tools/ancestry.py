@@ -18,8 +18,8 @@ from genes.infra.volumes import (
     vol_popgen,
     vol_workdir,
 )
-from genes.infra.provenance import PROVENANCE_KEY, stamp
-from genes.tools._base import ToolResult, ToolTimer, ensure_dir, run_cmd
+from genes.orchestrator.spec import Artifact, Criticality, Mode, ToolSpec, register
+from genes.tools._base import ToolResult, ToolTimer, build_result, ensure_dir, run_cmd
 
 # 1000 Genomes reference panel (plink2 binary format)
 _KG_PREFIX = f"{MOUNT_POPGEN}/1kg/all_phase3_GRCh38"
@@ -40,6 +40,7 @@ _ADMIXTURE_BIN = "/opt/admixture_linux-1.3.0/admixture"
 def infer_ancestry(
     vcf_path: str,
     run_id: str,
+    *,
     k_values: list[int] | None = None,
     n_pcs: int = 20,
 ) -> ToolResult:
@@ -89,6 +90,7 @@ def infer_ancestry(
                     "--make-bed",
                     "--out", sample_prefix,
                     "--allow-extra-chr",
+                    "--autosome",
                     "--max-alleles", "2",
                     "--snps-only", "just-acgt",
                     "--set-all-var-ids", "@:#:\\$r:\\$a",
@@ -284,20 +286,27 @@ def infer_ancestry(
 
         vol_workdir.commit()
 
-    return ToolResult(
-        tool_name="ancestry",
-        version="1.0",
-        started_at=timer.started_at,
-        completed_at=timer.completed_at,
-        input_summary={
-            "vcf_path": vcf_path,
-            "run_id": run_id,
+    return build_result(
+        SPEC, timer,
+        inputs={Artifact.VCF.value: vcf_path},
+        payload={
             "k_values": k_values,
             "n_pcs": n_pcs,
-            PROVENANCE_KEY: stamp("kg_panel", "reference_genome"),
+            "results": summary,
+            "files": output_paths,
         },
-        output_paths=output_paths,
-        output_summary=summary,
         errors=errors,
         warnings=warnings,
     )
+
+
+SPEC = ToolSpec(
+    name="ancestry",
+    version="1.0",
+    modes=(Mode.GERMLINE,),
+    consumes=(Artifact.VCF,),
+    criticality=Criticality.STANDARD,
+    timeout_s=1800,
+    reference_artifacts=("kg_panel", "reference_genome"),
+)
+register(SPEC, infer_ancestry)
